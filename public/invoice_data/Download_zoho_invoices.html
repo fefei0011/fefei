@@ -669,8 +669,7 @@
           }
 
           const count = data.files.length;
-          showStatus(`Downloading ${count} bill file(s)...`, "info", true);
-          await downloadFiles(data.files);
+          await downloadFiles(data.files, "bill");
           showStatus(`Successfully downloaded ${count} bill file(s).`, "success");
 
         } catch (error) {
@@ -749,8 +748,7 @@
             showStatus("Successfully created and downloaded ZIP.", "success");
 
           } else {
-            showStatus(`Processing ${files.length} file(s)...`, "info", true);
-            await downloadFiles(files);
+            await downloadFiles(files, "invoice");
             showStatus(`Successfully downloaded ${files.length} invoice file(s).`, "success");
           }
 
@@ -768,12 +766,17 @@
        * ============================================================
        */
 
-      async function downloadFiles(files) {
-        for (let index = 0; index < files.length; index++) {
+      async function downloadFiles(files, typeLabel = "file") {
+        const total = files.length;
+        for (let index = 0; index < total; index++) {
           const file = files[index];
+          
+          // 🟢 Dynamic Progress Update: ഉദാഹരണത്തിന് "Downloading bill file 1 of 39 (3%)" അല്ലെങ്കിൽ "Downloading 1/39..."
+          showStatus(`Downloading ${index + 1}/${total} ${typeLabel} file(s)...`, "info", true);
+          
           downloadBase64File(file);
 
-          if (index < files.length - 1) {
+          if (index < total - 1) {
             await sleep(600);
           }
         }
