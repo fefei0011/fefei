@@ -502,8 +502,15 @@ if (search_value && search_value.trim() !== "") {
 
 if (!resolvedSearchMatch) return;
 
-      let saved = billing.find((b) => relatedPlates.includes((b.plate_no || "").trim().toUpperCase()) && (b.site_name || "").trim().toLowerCase() === currentSiteName.toLowerCase());
-      let vInvs = invoices.filter((i) => relatedPlates.includes((i.plate_no || "").trim().toUpperCase()));
+      function matchesRelatedPlates(bPlate) {
+        if (!bPlate) return false;
+        let raw = String(bPlate).trim().toUpperCase();
+        let parts = raw.split(/➔|→|->/).map((p) => cleanPlate(p)).filter(Boolean);
+        return parts.some((p) => allRelatedNorms.includes(p)) || allRelatedNorms.includes(cleanPlate(raw));
+      }
+
+      let saved = billing.find((b) => matchesRelatedPlates(b.plate_no) && (b.site_name || "").trim().toLowerCase() === currentSiteName.toLowerCase());
+      let vInvs = invoices.filter((i) => matchesRelatedPlates(i.plate_no));
       let invData = vInvs[0] || {};
 
       // 🟢 Driver Log Lookup for specific month
@@ -807,8 +814,14 @@ plateLogForRelated.rows.forEach(pl => {
 const [savedResult, tsVehicleRes, rateLogRes, siteLogRes, ownerLogRes, plateLogRes] = await Promise.all([
   pool.query(
     `SELECT * FROM billing_records 
-     WHERE UPPER(TRIM(plate_no)) = ANY($1::text[])
-       AND billing_month = ANY($2::text[])
+     WHERE (
+       UPPER(TRIM(plate_no)) = ANY($1::text[])
+       OR EXISTS (
+         SELECT 1 FROM unnest($1::text[]) AS rp 
+         WHERE UPPER(TRIM(billing_records.plate_no)) LIKE '%' || rp || '%'
+       )
+     )
+     AND billing_month = ANY($2::text[])
      ORDER BY TO_DATE(billing_month, 'Month YYYY') ASC, id DESC`,
     [allRelatedPlates, targetMonths]
   ),
@@ -835,8 +848,16 @@ const [savedResult, tsVehicleRes, rateLogRes, siteLogRes, ownerLogRes, plateLogR
     let combinedRows = [];
     let totals = { nhr: 0, othr: 0, rent: 0, vat_amount: 0, total: 0, adjusted_amount: 0, after_adjustment: 0 };
 
+    function plateMatchesRelated(targetPlate) {
+      if (!targetPlate) return false;
+      let raw = String(targetPlate).trim().toUpperCase();
+      let parts = raw.split(/➔|→|->/).map(p => p.trim().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      let cleanRelated = allRelatedPlates.map(p => p.replace(/[^A-Z0-9]/g, ""));
+      return parts.some(p => cleanRelated.includes(p)) || cleanRelated.includes(raw.replace(/[^A-Z0-9]/g, ""));
+    }
+
     targetMonths.forEach((mStr) => {
-      let savedRow = savedResult.rows.find((r) => r.billing_month === mStr);
+      let savedRow = savedResult.rows.find((r) => r.billing_month === mStr && plateMatchesRelated(r.plate_no));
 
       const [mName, yStr] = mStr.split(" ");
       const shortDate = mName.substring(0, 3) + " " + (yStr ? yStr.substring(2, 4) : "");
@@ -1136,12 +1157,14 @@ router.post("/save-bill", verifyViewBillUser, async (req, res) => {
       const vat_amount = Number((total - calculatedRent).toFixed(2));
       const after_adjustment = Number((total + adjAmt).toFixed(2));
 
+      let rawSplitPlates = cleanPlate.split(/➔|→|->/).map(p => p.trim().toUpperCase()).filter(Boolean);
+      let cleanupPlates = [...new Set([cleanPlate, ...rawSplitPlates])];
+
       const pCheck = await client.query(
         `SELECT old_plate_no, new_plate_no FROM vehicle_plate_log 
-         WHERE UPPER(TRIM(old_plate_no)) = UPPER(TRIM($1)) OR UPPER(TRIM(new_plate_no)) = UPPER(TRIM($1))`,
-        [cleanPlate]
+         WHERE UPPER(TRIM(old_plate_no)) = ANY($1::text[]) OR UPPER(TRIM(new_plate_no)) = ANY($1::text[])`,
+        [cleanupPlates]
       );
-      let cleanupPlates = [cleanPlate];
       pCheck.rows.forEach(pl => {
         let op = (pl.old_plate_no || "").trim().toUpperCase();
         let np = (pl.new_plate_no || "").trim().toUpperCase();

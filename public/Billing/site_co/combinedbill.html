@@ -296,6 +296,7 @@
 
       function searchPlateOrOwner(input) {
         const val = input.value.trim().toUpperCase();
+        const cleanVal = val.replace(/[^A-Z0-9]/g, "");
         const type = document.getElementById("searchType").value;
         const box = document.getElementById("plateSuggestions");
         currentFocus = -1;
@@ -307,7 +308,12 @@
         else if (type === "owner") pool = suggestionOwners;
         else pool = [...new Set([...suggestionPlates, ...suggestionOwners])];
 
-        const matches = pool.filter((p) => p && p.toUpperCase().includes(val));
+        const matches = pool.filter((p) => {
+          if (!p) return false;
+          let pUpper = p.toUpperCase();
+          if (type === "owner") return pUpper.includes(val);
+          return pUpper.includes(val) || pUpper.replace(/[^A-Z0-9]/g, "").includes(cleanVal);
+        });
 
         if (matches.length > 0) {
           box.innerHTML = "";
