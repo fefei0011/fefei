@@ -2014,7 +2014,7 @@ lengthMenu: [
             const url = window.URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = `Haka_ERP_Master_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            a.download = `Master_Data_Base_${new Date().toISOString().slice(0, 10)}.xlsx`;
             document.body.appendChild(a);
             a.click();
             a.remove();
