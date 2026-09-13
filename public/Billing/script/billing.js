@@ -332,10 +332,13 @@ function nextMonthBilling() {
 }
 
 function getShortDate() {
-  let val = document.getElementById("selectedMonthText").innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  let val = (textEl?.dataset?.fullMonth || textEl?.innerText || "").trim();
   let parts = val.split(" ");
-  if (parts.length >= 2)
-    return parts[0].substring(0, 3) + " " + parts[1].substring(2, 4);
+  if (parts.length >= 2) {
+    let yearPart = parts[1].length === 4 ? parts[1].substring(2, 4) : parts[1];
+    return parts[0].substring(0, 3) + " " + yearPart;
+  }
   return val;
 }
 
