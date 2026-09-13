@@ -519,7 +519,7 @@ function rearrangeScreenData() {
         log_othr: parseFloat(row.querySelector(".log-ot")?.innerText) || 0,
         bill_nhr: parseFloat(row.querySelector(".bill-nr")?.innerText) || 0,
         bill_othr: parseFloat(row.querySelector(".bill-ot")?.innerText) || 0,
-        driver_ot: parseFloat(row.querySelector(".driver-ot")?.innerText) || 0,
+        driver_ot: parseFloat(row.querySelector(".driver-ot-input")?.value || row.querySelector(".driver-ot")?.innerText || 0),
         driver_amount: parseFloat(row.dataset.driverAmount) || 0,
         temp_nhr: nhr,
         temp_othr: othr,
@@ -908,11 +908,18 @@ function createBillCard(group, id) {
     `;
 
   group.items.forEach((item, index) => {
-    // 🟢 പ്ലേറ്റ് മാറ്റങ്ങൾ കണക്കിലെടുത്ത് related_plates വഴിയും സൈറ്റ് വഴിയും കൃത്യമായി മാച്ച് ചെയ്യുന്നു
     let itemPlates = Array.isArray(item.related_plates) ? item.related_plates : [(item.plate_number || item.plate || "").trim().toUpperCase()];
+    function matchesBillingPlate(bPlate) {
+      if (!bPlate) return false;
+      let raw = String(bPlate).trim().toUpperCase();
+      let parts = raw.split(/➔|→|->/).map(p => p.trim().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      let cleanItemPlates = itemPlates.map(p => String(p).replace(/[^A-Z0-9]/g, ""));
+      return parts.some(p => cleanItemPlates.includes(p)) || cleanItemPlates.includes(raw.replace(/[^A-Z0-9]/g, ""));
+    }
+
     let saved = savedBillingData.find(
       (s) =>
-        itemPlates.includes((s.plate_no || "").trim().toUpperCase()) &&
+        matchesBillingPlate(s.plate_no) &&
         (s.site_name || "").trim().toUpperCase() ===
           (item.site || "").trim().toUpperCase(),
     );
@@ -1107,7 +1114,7 @@ function generateRowHTML(
             <td class="vat vat-col" style="display:${vatDisplay};">0</td>
             <td class="total total-col" style="display:${vatDisplay};">0</td>
             <td class="no-export-col"><input type="text" class="remark" value="${remark}" placeholder=" " style="text-align: left; padding-left: 5px;"></td>
-             <td class="no-export driver-ot">${driverOt}</td>
+             <td class="no-export"><input type="number" step="any" class="driver-ot-input" value="${driverOt || 0}" style="width:100%; border:none; background:transparent; text-align:center; font-family:inherit; font-size:12px; outline:none; font-weight:600; color:#854d0e;"></td>
             <td class="no-export log-nr">${logNhr}</td>
             <td class="no-export log-ot">${logOthr}</td>
             <td class="no-export bill-nr">${billNhr}</td>
@@ -1175,7 +1182,7 @@ window.arrangeSingleCard = function (cardId) {
       log_othr: parseFloat(row.querySelector(".log-ot")?.innerText) || 0,
       bill_nhr: parseFloat(row.querySelector(".bill-nr")?.innerText) || 0,
       bill_othr: parseFloat(row.querySelector(".bill-ot")?.innerText) || 0,
-      driver_ot: parseFloat(row.querySelector(".driver-ot")?.innerText) || 0,
+      driver_ot: parseFloat(row.querySelector(".driver-ot-input")?.value || row.querySelector(".driver-ot")?.innerText || 0),
       driver_amount: parseFloat(row.dataset.driverAmount) || 0,
       temp_nhr: nhr,
       temp_othr: othr,
@@ -1577,19 +1584,29 @@ function applyAutoFillData(input, match, addBlankRow = true) {
   row.querySelector(".log-ot").innerText = match.log_othr || 0;
   row.querySelector(".bill-nr").innerText = match.bill_nhr || 0;
   row.querySelector(".bill-ot").innerText = match.bill_othr || 0;
-  row.querySelector(".driver-ot").innerText = match.driver_ot || 0;
+  const drOtInput = row.querySelector(".driver-ot-input");
+  if (drOtInput) drOtInput.value = match.driver_ot || 0;
   row.dataset.driverAmount = match.driver_amount || 0;
 
   let matchPlates = Array.isArray(match.related_plates) ? match.related_plates : [(match.plate_number || match.plate || "").trim().toUpperCase()];
+  function matchesSavedBillingPlate(bPlate) {
+    if (!bPlate) return false;
+    let raw = String(bPlate).trim().toUpperCase();
+    let parts = raw.split(/➔|→|->/).map((p) => p.trim().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+    let cleanMatchPlates = matchPlates.map((p) => String(p).replace(/[^A-Z0-9]/g, ""));
+    return parts.some((p) => cleanMatchPlates.includes(p)) || cleanMatchPlates.includes(raw.replace(/[^A-Z0-9]/g, ""));
+  }
+
   let saved = savedBillingData.find(
     (s) =>
-      matchPlates.includes((s.plate_no || "").trim().toUpperCase()) &&
+      matchesSavedBillingPlate(s.plate_no) &&
       (s.site_name || "").trim().toUpperCase() ===
         (match.site || match.site_name || "").trim().toUpperCase(),
   );
 
   if (saved) {
-   row.querySelector(".driver-ot").innerText = saved.driver_ot || 0;
+    const drOtInput = row.querySelector(".driver-ot-input");
+    if (drOtInput) drOtInput.value = saved.driver_ot || 0;
     row.dataset.driverAmount = saved.driver_amount || 0;
     row.querySelector(".nhr").value = saved.nhr || 0;
     row.querySelector(".othr").value = saved.othr || 0;
@@ -1617,10 +1634,9 @@ function applyAutoFillData(input, match, addBlankRow = true) {
 
   let vatSelect = row.querySelector(".vat-rate");
   if (vatSelect) {
-    let matchPlates = Array.isArray(match.related_plates) ? match.related_plates : [(match.plate_number || match.plate || "").trim().toUpperCase()];
-    let saved = savedBillingData.find(
+    let savedForVat = savedBillingData.find(
       (s) =>
-        matchPlates.includes((s.plate_no || "").trim().toUpperCase()) &&
+        matchesSavedBillingPlate(s.plate_no) &&
         (s.site_name || "").trim().toUpperCase() ===
           (match.site || match.site_name || "").trim().toUpperCase()
     );
@@ -2207,7 +2223,7 @@ function submitBulkData() {
           adjustment_desc: rowAdjDescStr,
           adjusted_amount: rowAdjAmtTotal,
           after_adjustment: Number((totalVal + rowAdjAmtTotal).toFixed(2)),
-          driver_ot: parseFloat(row.querySelector(".driver-ot")?.innerText) || 0,
+          driver_ot: parseFloat(row.querySelector(".driver-ot-input")?.value || row.querySelector(".driver-ot")?.innerText || 0),
           driver_amount: parseFloat(row.dataset.driverAmount) || 0,
           remark: row.querySelector(".remark") ? row.querySelector(".remark").value.trim() : "",
         });
@@ -2453,7 +2469,7 @@ function submitSingleCard(cardId) {
         adjustment_desc: rowAdjDescStr,
         adjusted_amount: rowAdjAmtTotal,
         after_adjustment: Number((totalVal + rowAdjAmtTotal).toFixed(2)),
-        driver_ot: parseFloat(row.querySelector(".driver-ot")?.innerText) || 0,
+        driver_ot: parseFloat(row.querySelector(".driver-ot-input")?.value || row.querySelector(".driver-ot")?.innerText || 0),
         driver_amount: parseFloat(row.dataset.driverAmount) || 0,
         remark: row.querySelector(".remark")
           ? row.querySelector(".remark").value.trim()
@@ -2720,11 +2736,13 @@ function loadSavedAdjustmentsToCard(card) {
     let site = row.querySelector(".site").value.trim();
     if (!plate) return;
 
-    let saved = savedBillingData.find(
-      (s) =>
-        (s.plate_no || "").toUpperCase() === plate &&
-        (s.site_name || "").trim() === site,
-    );
+    let cleanInputPlate = plate.replace(/[^A-Z0-9]/g, "");
+    let saved = savedBillingData.find((s) => {
+      let sPlateRaw = String(s.plate_no || "").toUpperCase();
+      let parts = sPlateRaw.split(/➔|→|->/).map((p) => p.replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      let plateMatches = parts.includes(cleanInputPlate) || sPlateRaw.replace(/[^A-Z0-9]/g, "") === cleanInputPlate;
+      return plateMatches && (s.site_name || "").trim().toUpperCase() === site.toUpperCase();
+    });
 
     if (saved && saved.adjustment_desc) {
       try {

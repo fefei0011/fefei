@@ -348,17 +348,25 @@ router.get("/vehicles", async (req, res) => {
           vatRaw === "15%"
             ? "Yes"
             : "No";
-        const relatedPlateSet = new Set(
-          relatedPlates.map((relatedPlate) => String(relatedPlate || "").trim().toUpperCase()),
-        );
+        function isPlateMatchingSet(candidate) {
+          if (!candidate) return false;
+          let raw = String(candidate).trim().toUpperCase();
+          let cleanCandidate = raw.replace(/[^A-Z0-9]/g, "");
+          let parts = raw.split(/➔|→|->/).map(p => p.trim().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+          return relatedPlates.some(rp => {
+            let cleanRp = String(rp).replace(/[^A-Z0-9]/g, "");
+            return cleanRp === cleanCandidate || parts.includes(cleanRp);
+          });
+        }
+
         const vehicleTimesheets = timesheetRows.filter((timesheet) =>
-          relatedPlateSet.has(String(timesheet.plate_no || "").trim().toUpperCase()),
+          isPlateMatchingSet(timesheet.plate_no)
         );
         const logHours = targetMonthIdx >= 0
           ? calculateLogHours(vehicleTimesheets, targetMonthIdx, targetYearNum, pSite, specialRules)
           : { nhr: 0, othr: 0 };
         const matchingInvoices = invoiceRows.filter((invoice) =>
-          relatedPlateSet.has(String(invoice.plate_no || "").trim().toUpperCase()),
+          isPlateMatchingSet(invoice.plate_no)
         );
         const invoice = matchingInvoices.find(
           (item) => String(item.site_name || "").trim().toUpperCase() === String(pSite || "").trim().toUpperCase(),
@@ -409,12 +417,14 @@ router.post("/save", async (req, res) => {
       if (!plateNo || !siteName) continue;
 
       // Find all related plates (old & new) for clean deletion
+      let rawSplitPlates = plateNo.split(/➔|→|->/).map(p => p.trim().toUpperCase()).filter(Boolean);
+      let cleanupPlates = [...new Set([plateNo.toUpperCase(), ...rawSplitPlates])];
+
       const pCheck = await client.query(
         `SELECT old_plate_no, new_plate_no FROM vehicle_plate_log 
-         WHERE UPPER(TRIM(old_plate_no)) = UPPER(TRIM($1)) OR UPPER(TRIM(new_plate_no)) = UPPER(TRIM($1))`,
-        [plateNo]
+         WHERE UPPER(TRIM(old_plate_no)) = ANY($1::text[]) OR UPPER(TRIM(new_plate_no)) = ANY($1::text[])`,
+        [cleanupPlates]
       );
-      let cleanupPlates = [plateNo.toUpperCase()];
       pCheck.rows.forEach(pl => {
         let op = (pl.old_plate_no || "").trim().toUpperCase();
         let np = (pl.new_plate_no || "").trim().toUpperCase();
@@ -640,11 +650,13 @@ router.get("/combined-bill", async (req, res) => {
     const cleanPlate = plate_no.trim().toUpperCase();
 
     // 🟢 ഈ വണ്ടിയുടെ എല്ലാ അനുബന്ധ പ്ലേറ്റ് നമ്പറുകളും (പഴയതും പുതിയതും) കണ്ടെത്തുന്നു
-    let relatedPlates = [cleanPlate];
+    let rawPlates = cleanPlate.split(/➔|→|->/).map(p => p.trim().toUpperCase()).filter(Boolean);
+    let relatedPlates = [...new Set([cleanPlate, ...rawPlates])];
+
     const plateChangesQuery = await pool.query(
       `SELECT old_plate_no, new_plate_no FROM vehicle_plate_log 
-       WHERE UPPER(TRIM(old_plate_no)) = $1 OR UPPER(TRIM(new_plate_no)) = $1`,
-      [cleanPlate]
+       WHERE UPPER(TRIM(old_plate_no)) = ANY($1::text[]) OR UPPER(TRIM(new_plate_no)) = ANY($1::text[])`,
+      [relatedPlates]
     );
 
     plateChangesQuery.rows.forEach(pl => {
@@ -654,11 +666,17 @@ router.get("/combined-bill", async (req, res) => {
       if (np && !relatedPlates.includes(np)) relatedPlates.push(np);
     });
 
-    // Query saved billing records across all related plates (id DESC ensures latest edited record is taken)
+    // Query saved billing records across all related plates or arrow combination
     const savedResult = await pool.query(
       `SELECT * FROM billing_records 
-       WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) 
-         AND billing_month = ANY($2::text[])
+       WHERE (
+         UPPER(TRIM(plate_no)) = ANY($1::text[])
+         OR EXISTS (
+           SELECT 1 FROM unnest($1::text[]) AS rp 
+           WHERE UPPER(TRIM(billing_records.plate_no)) LIKE '%' || rp || '%'
+         )
+       )
+       AND billing_month = ANY($2::text[])
        ORDER BY TO_DATE(billing_month, 'Month YYYY') ASC, id DESC`,
       [relatedPlates, targetMonths]
     );
@@ -681,11 +699,18 @@ router.get("/combined-bill", async (req, res) => {
     let combinedRows = [];
     let totals = { nhr: 0, othr: 0, rent: 0, vat_amount: 0, total: 0, adjusted_amount: 0, after_adjustment: 0 };
 
+    function plateMatchesRelated(targetPlate) {
+      if (!targetPlate) return false;
+      let raw = String(targetPlate).trim().toUpperCase();
+      let parts = raw.split(/➔|→|->/).map(p => p.trim().replace(/[^A-Z0-9]/g, "")).filter(Boolean);
+      let cleanRelated = relatedPlates.map(p => p.replace(/[^A-Z0-9]/g, ""));
+      return parts.some(p => cleanRelated.includes(p)) || cleanRelated.includes(raw.replace(/[^A-Z0-9]/g, ""));
+    }
+
     targetMonths.forEach((mStr) => {
       let savedRow = savedResult.rows.find((r) => {
         let bMonthMatch = r.billing_month === mStr;
-        let bPlate = (r.plate_no || "").trim().toUpperCase();
-        return bMonthMatch && relatedPlates.includes(bPlate);
+        return bMonthMatch && plateMatchesRelated(r.plate_no);
       });
 
       const [mName, yStr] = mStr.split(" ");
