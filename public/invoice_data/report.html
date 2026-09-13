@@ -2436,7 +2436,6 @@
             let ts_nr = siteDataMap[sName].ts_nr;
             let ts_ot = siteDataMap[sName].ts_ot;
 
-            // മാസ്റ്റർ പ്ലേറ്റും ലോഗിലുള്ള എല്ലാ അനുബന്ധ പ്ലേറ്റുകളും ഒന്നിച്ച് നോക്കുന്നു
             let relatedCleanPlates = [pClean];
             (data.plateChanges || []).forEach((pl) => {
               let oP = cleanPlate(pl.old_plate_no);
@@ -2447,24 +2446,32 @@
                 relatedCleanPlates.push(oP);
             });
 
-            let vInvoices = (data.invoices || []).filter((i) =>
-              relatedCleanPlates.includes(cleanPlate(i.plate_no)),
-            );
+            let vInvoices = (data.invoices || []).filter((i) => {
+              let rawP = String(i.plate_no || "").toUpperCase();
+              let pParts = rawP.split(/➔|→|->/).map((p) => cleanPlate(p)).filter(Boolean);
+              return pParts.some((cp) => relatedCleanPlates.includes(cp)) || relatedCleanPlates.includes(cleanPlate(rawP));
+            });
 
             // ഏറ്റവും അവസാനം സേവ് ചെയ്ത റെക്കോർഡ് എടുക്കാൻ id DESC ക്രമത്തിൽ സോർട്ട് ചെയ്യുന്നു
             let sortedBilling = [...(data.billing || [])].sort(
               (a, b) => (b.id || 0) - (a.id || 0),
             );
 
+            function matchPlateWithAliases(targetPlate) {
+              let raw = String(targetPlate || "").toUpperCase();
+              let parts = raw.split(/➔|→|->/).map((p) => cleanPlate(p)).filter(Boolean);
+              return parts.some((cp) => relatedCleanPlates.includes(cp)) || relatedCleanPlates.includes(cleanPlate(raw));
+            }
+
             let billData = sortedBilling.find(
               (b) =>
-                relatedCleanPlates.includes(cleanPlate(b.plate_no)) &&
+                matchPlateWithAliases(b.plate_no) &&
                 (b.site_name || "").trim() === sName,
             );
             if (!billData && sName !== "N/A") {
               billData = sortedBilling.find(
                 (b) =>
-                  relatedCleanPlates.includes(cleanPlate(b.plate_no)) &&
+                  matchPlateWithAliases(b.plate_no) &&
                   (!b.site_name || b.site_name === "N/A"),
               );
             }
