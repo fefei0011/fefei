@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Combined Driver OT Statement | Haka ERP</title>
+    <meta name="viewport" content="width=1650" />
+    <script src="/node_xlsx_scripts/html2canvas.min.js"></script>
+    <script src="/node_xlsx_scripts/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet" />
+    <link rel="stylesheet" href="style/billing.css" />
+    <style>
+      .autocomplete-wrapper { position: relative; }
+      .suggestion-box {
+        position: absolute; top: 100%; left: 0; background: white;
+        border: 1px solid #1a4d80; z-index: 9999; max-height: 250px;
+        overflow-y: auto; display: none; text-align: left;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); border-radius: 0 0 4px 4px; width: 100%;
+      }
+      .suggestion-item { padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; font-weight: bold; color: #333; }
+      .suggestion-item:hover, .suggestion-item.active { background-color: #1a4d80; color: white; }
+      #toast {
+        visibility: hidden; min-width: 250px; background-color: #333; color: #fff;
+        text-align: center; border-radius: 5px; padding: 14px; position: fixed;
+        z-index: 9999; left: 50%; bottom: 30px; transform: translateX(-50%);
+        font-size: 15px; font-weight: bold; box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.3);
+      }
+      #toast.show { visibility: visible; }
+    </style>
+  </head>
+  <body>
+    <div class="top-controls-wrapper" style="width: fit-content; margin: 20px auto;">
+      <div class="top-controls">
+        <a href="driverotindex.html" class="btn btn-dash" title="Back to Driver OT" style="text-decoration: none;">
+          <i class="material-icons" style="font-size: 20px; color: #007bff">arrow_back</i>
+        </a>
+
+        <!-- Search Mode -->
+        <div class="selector-wrapper" style="width: 140px;">
+          <select id="searchType" style="height:32px; border:none; background:transparent; font-weight:bold; font-size:12px; width:100%;">
+            <option value="driver">Driver Name</option>
+            <option value="plate">Plate No</option>
+          </select>
+        </div>
+
+        <div class="selector-wrapper autocomplete-wrapper" style="width: 220px;">
+          <input type="text" id="searchInput" placeholder="Type Driver or Plate..." oninput="searchSuggestions(this)" autocomplete="off" style="font-weight: bold; width: 100%; border:none; background:transparent; outline:none; font-size:12px;" />
+          <div class="suggestion-box" id="suggestionBox"></div>
+        </div>
+
+        <!-- From Month -->
+        <div class="selector-wrapper" style="display: flex; align-items: center; gap: 5px;">
+          <label style="white-space: nowrap; font-weight: bold; color: #1a4d80; font-size: 13px;">From:</label>
+          <select id="fromMonth" style="height:32px; border:none; background:transparent; font-weight:bold;">
+            <option value="January" selected>January</option>
+            <option value="February">February</option>
+            <option value="March">March</option>
+            <option value="April">April</option>
+            <option value="May">May</option>
+            <option value="June">June</option>
+            <option value="July">July</option>
+            <option value="August">August</option>
+            <option value="September">September</option>
+            <option value="October">October</option>
+            <option value="November">November</option>
+            <option value="December">December</option>
+          </select>
+          <input type="number" id="fromYear" value="2026" style="width:65px; height:32px; border:none; font-weight:bold;" />
+        </div>
+
+        <!-- To Month -->
+        <div class="selector-wrapper" style="display: flex; align-items: center; gap: 5px;">
+          <label style="white-space: nowrap; font-weight: bold; color: #1a4d80; font-size: 13px;">To:</label>
+          <select id="toMonth" style="height:32px; border:none; background:transparent; font-weight:bold;">
+            <option value="January">January</option>
+            <option value="February">February</option>
+            <option value="March">March</option>
+            <option value="April">April</option>
+            <option value="May">May</option>
+            <option value="June">June</option>
+            <option value="July">July</option>
+            <option value="August">August</option>
+            <option value="September">September</option>
+            <option value="October">October</option>
+            <option value="November">November</option>
+            <option value="December">December</option>
+          </select>
+          <input type="number" id="toYear" value="2026" style="width:65px; height:32px; border:none; font-weight:bold;" />
+        </div>
+
+        <button type="button" class="btn btn-fetch" onclick="fetchCombinedDriverBill()">
+          Generate Statement ✨
+        </button>
+
+        <button type="button" class="btn" style="background:#007bff;" onclick="downloadStatementPNG()" title="Download Statement PNG">
+          <i class="material-icons" style="font-size:16px;">download</i> Download
+        </button>
+
+        <button type="button" class="btn" style="background:#17a2b8;" onclick="copyStatementHQ()" title="Copy HQ Image">
+          <i class="material-icons" style="font-size:16px;">content_copy</i> Copy HQ
+        </button>
+
+        <button type="button" class="btn" style="background:#1d6f42;" onclick="exportStatementExcel()">
+          <i class="material-icons" style="font-size:16px;">table_chart</i> Excel
+        </button>
+      </div>
+    </div>
+
+    <!-- Statement Card -->
+    <div class="container bill-card" id="driverStatementCard" style="width: 96%; max-width: 1350px; margin: 0 auto 50px auto; background: white; padding: 25px; border-radius: 8px; border: 1px solid #ddd;">
+      <div class="print-area" id="printArea">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #1a4d80; padding-bottom: 10px;">
+          <h2 style="margin: 0; color: #1a4d80; font-size: 20px;">Combined Driver OT Statement</h2>
+          <div style="font-weight: 700; color: #334155; font-size: 15px;">
+            <span id="dispDriverTitle">DRIVER: -</span>
+          </div>
+        </div>
+
+        <table class="billTable" style="width: 100%; border-collapse: collapse; font-size: 13px;">
+          <thead>
+            <tr style="background: #1a4d80; color: white;">
+              <th style="width: 5%; padding: 8px; border: 1px solid #10365c;">#</th>
+              <th style="width: 12%; padding: 8px; border: 1px solid #10365c;">Month</th>
+              <th style="width: 18%; padding: 8px; border: 1px solid #10365c;">Vehicle Type</th>
+              <th style="width: 20%; padding: 8px; border: 1px solid #10365c;">Driver</th>
+              <th style="width: 15%; padding: 8px; border: 1px solid #10365c;">Site</th>
+              <th style="width: 12%; padding: 8px; border: 1px solid #10365c;">Plate No</th>
+              <th style="width: 10%; padding: 8px; border: 1px solid #10365c;">OT Hours</th>
+              <th style="width: 8%; padding: 8px; border: 1px solid #10365c;">Rate</th>
+              <th style="width: 10%; padding: 8px; border: 1px solid #10365c;">Amount</th>
+            </tr>
+          </thead>
+          <tbody id="statementTableBody">
+            <tr>
+              <td colspan="9" style="text-align: center; padding: 30px; color: #888;">
+                Select Driver or Plate No and click "Generate Statement ✨"
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="total-row" style="background: #f8fafc; font-weight: bold; border-top: 2px solid #cbd5e1;">
+              <td colspan="6" style="text-align: right; padding-right: 15px; padding-top: 8px; padding-bottom: 8px; border: 1px solid #cbd5e1;">Total:</td>
+              <td id="gtOtHours" style="text-align: center; border: 1px solid #cbd5e1;">0</td>
+              <td style="border: 1px solid #cbd5e1;"></td>
+              <td id="gtOtAmount" style="text-align: center; border: 1px solid #cbd5e1;">0.00</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+      let driverMasterList = [];
+      let plateMasterList = [];
+      let statementDataCache = null;
+
+      document.addEventListener("DOMContentLoaded", () => {
+        initDates();
+        loadSuggestions();
+      });
+
+      function initDates() {
+        const monthNames = [
+          "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December"
+        ];
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonthIdx = now.getMonth();
+
+        document.getElementById("fromMonth").value = "January";
+        document.getElementById("fromYear").value = currentYear;
+
+        if (currentMonthIdx === 0) {
+          document.getElementById("toMonth").value = "December";
+          document.getElementById("toYear").value = currentYear - 1;
+        } else {
+          document.getElementById("toMonth").value = monthNames[currentMonthIdx - 1];
+          document.getElementById("toYear").value = currentYear;
+        }
+      }
+
+      async function loadSuggestions() {
+        const token = localStorage.getItem("token") || localStorage.getItem("invoiceToken");
+        try {
+          const res = await fetch("/driver-billing/vehicles", {
+            headers: { Authorization: "Bearer " + token },
+          });
+          const data = await res.json();
+          if (data.success) {
+            driverMasterList = [...new Set((data.driver_logs || []).map(d => (d.driver_name || "").trim()).filter(Boolean))].sort();
+            plateMasterList = [...new Set((data.vehicles || []).map(v => (v.plate_no || "").trim().toUpperCase()).filter(Boolean))].sort();
+          }
+        } catch (e) {
+          console.error("Suggestions load error", e);
+        }
+      }
+
+      function searchSuggestions(input) {
+        const val = input.value.trim().toUpperCase();
+        const type = document.getElementById("searchType").value;
+        const box = document.getElementById("suggestionBox");
+
+        if (!val) { box.style.display = "none"; return; }
+
+        let pool = type === "driver" ? driverMasterList : plateMasterList;
+        let matches = pool.filter(item => item.toUpperCase().includes(val));
+
+        if (matches.length > 0) {
+          box.innerHTML = "";
+          matches.forEach(m => {
+            let div = document.createElement("div");
+            div.className = "suggestion-item";
+            div.innerText = m;
+            div.onmousedown = (e) => {
+              e.preventDefault();
+              input.value = m;
+              box.style.display = "none";
+              fetchCombinedDriverBill();
+            };
+            box.appendChild(div);
+          });
+          box.style.display = "block";
+        } else {
+          box.style.display = "none";
+        }
+      }
+
+      async function fetchCombinedDriverBill() {
+        const inputVal = document.getElementById("searchInput").value.trim();
+        const type = document.getElementById("searchType").value;
+        const fromM = document.getElementById("fromMonth").value;
+        const fromY = document.getElementById("fromYear").value;
+        const toM = document.getElementById("toMonth").value;
+        const toY = document.getElementById("toYear").value;
+
+        if (!inputVal) return showToast("Please enter a Driver Name or Plate No!");
+
+        const token = localStorage.getItem("token") || localStorage.getItem("invoiceToken");
+        const tbody = document.getElementById("statementTableBody");
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:25px; color:#1a4d80;">Fetching combined driver statement...</td></tr>';
+
+        try {
+          let param = type === "driver" ? `driver_name=${encodeURIComponent(inputVal)}` : `plate_no=${encodeURIComponent(inputVal)}`;
+          const url = `/driver-billing/combined-driver-bill?${param}&from_month=${fromM}&from_year=${fromY}&to_month=${toM}&to_year=${toY}`;
+          const res = await fetch(url, { headers: { Authorization: "Bearer " + token } });
+          const data = await res.json();
+
+          if (data.success && data.rows && data.rows.length > 0) {
+            statementDataCache = data;
+            renderStatementTable(data);
+            showToast("Statement generated successfully!");
+          } else {
+            tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:25px; color:#be123c;">${data.message || "No records found!"}</td></tr>`;
+          }
+        } catch (err) {
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:25px; color:#be123c;">Server connection error.</td></tr>';
+        }
+      }
+
+      function renderStatementTable(data) {
+        const tbody = document.getElementById("statementTableBody");
+        tbody.innerHTML = "";
+
+        const titleText = data.driver_name ? `DRIVER: ${data.driver_name}` : `PLATE NO: ${data.plate_no}`;
+        document.getElementById("dispDriverTitle").innerText = titleText;
+
+        data.rows.forEach((r, idx) => {
+          tbody.innerHTML += `
+            <tr>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 6px 8px;">${idx + 1}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; font-weight: 700; color: #1a4d80; padding: 6px 8px;">${r.date}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 6px 8px;">${r.vehicle_type}</td>
+              <td style="border: 1px solid #cbd5e1; padding: 6px 8px;">${r.driver}</td>
+              <td style="border: 1px solid #cbd5e1; padding: 6px 8px;">${r.site_name}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; font-weight: 700; padding: 6px 8px;">${r.plate_no}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; font-weight: 600; padding: 6px 8px;">${r.driver_ot}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 6px 8px;">${r.rate}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; font-weight: 700; padding: 6px 8px;">${parseFloat(r.driver_amount || 0).toFixed(2)}</td>
+            </tr>
+          `;
+        });
+
+        document.getElementById("gtOtHours").innerText = data.totals.total_ot;
+        document.getElementById("gtOtAmount").innerText = data.totals.total_amount.toFixed(2);
+      }
+
+      async function downloadStatementPNG() {
+        const area = document.getElementById("printArea");
+        const canvas = await html2canvas(area, { scale: 3, useCORS: true });
+        const link = document.createElement("a");
+        const name = document.getElementById("searchInput").value.trim().replace(/\s+/g, '_');
+        link.download = `Driver_OT_Statement_${name}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      }
+
+      async function copyStatementHQ() {
+        const area = document.getElementById("printArea");
+        const canvas = await html2canvas(area, { scale: 4, useCORS: true });
+        canvas.toBlob(async (blob) => {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+            showToast("Statement copied to clipboard!");
+          } else {
+            showToast("Clipboard not supported. Downloading instead.");
+            downloadStatementPNG();
+          }
+        }, "image/png", 1.0);
+      }
+
+      function exportStatementExcel() {
+        if (!statementDataCache || !statementDataCache.rows || statementDataCache.rows.length === 0) {
+          return showToast("No statement data to export!");
+        }
+        const ws = XLSX.utils.json_to_sheet(statementDataCache.rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Driver_OT_Statement");
+        XLSX.writeFile(wb, `Driver_OT_Statement.xlsx`);
+      }
+
+      function showToast(msg) {
+        const t = document.getElementById("toast");
+        t.innerText = msg;
+        t.className = "show";
+        setTimeout(() => (t.className = ""), 3000);
+      }
+    </script>
+  </body>
+</html>

@@ -12,13 +12,45 @@
     />
     <link rel="stylesheet" href="style/billing.css" />
     <style>
-
-        a{
-            text-decoration: none;
-        }
-        
+      a {
+        text-decoration: none;
+      }
       .hide-on-card-export {
         display: none !important;
+      }
+
+      /* 🟢 Center aligned expanded layout to fit 16 columns without overflow */
+      .top-controls-wrapper {
+        width: fit-content;
+        margin: 0 auto 20px auto !important;
+      }
+
+      #dynamicBillsContainer {
+        width: 96% !important;
+        max-width: 1650px !important;
+        margin: 0 auto 50px auto !important;
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+      }
+
+      .container.bill-card,
+      .bill-card {
+        width: 100% !important;
+        max-width: 1650px !important;
+        margin: 0 auto !important;
+        box-sizing: border-box;
+      }
+
+      .print-area {
+        width: 100% !important;
+        box-sizing: border-box;
+      }
+
+      .billTable {
+        width: 100% !important;
+        min-width: 1350px;
+        table-layout: fixed;
       }
     </style>
   </head>
@@ -37,15 +69,30 @@
             <i class="material-icons" style="font-size: 20px; color: #007bff">arrow_back</i>
           </a>
 
-          <div class="selector-wrapper">
-            <label class="month-label">Month:</label>
-            <div class="custom-dropdown" id="monthDropdownContainer" style="width: 130px">
-              <div class="custom-dropdown-selected" onclick="toggleDropdown('monthOptions')">
+          <div class="selector-wrapper" style="display: flex; align-items: center; gap: 4px;">
+            <button
+              type="button"
+              onclick="prevMonthDriverBilling()"
+              title="Previous Month"
+              style="padding: 4px 7px; border: 1px solid #cbd5e1; background: white; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; color: #475569;"
+            >
+              ◀
+            </button>
+            <div class="custom-dropdown" id="monthDropdownContainer" style="width: 90px">
+              <div class="custom-dropdown-selected" onclick="toggleDropdown('monthOptions')" style="padding: 5px 6px; font-size: 12px; font-weight: bold;">
                 <span id="selectedMonthText">Loading...</span>
-                <span style="font-size: 10px">▼</span>
+                <span style="font-size: 10px; margin-left: 2px;">▼</span>
               </div>
-              <div class="custom-dropdown-options" id="monthOptions"></div>
+              <div class="custom-dropdown-options" id="monthOptions" style="width: 140px;"></div>
             </div>
+            <button
+              type="button"
+              onclick="nextMonthDriverBilling()"
+              title="Next Month"
+              style="padding: 4px 7px; border: 1px solid #cbd5e1; background: white; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; color: #475569;"
+            >
+              ▶
+            </button>
           </div>
 
           <button type="button" class="btn btn-fetch" onclick="fetchDataFromERP()">
@@ -55,6 +102,10 @@
           <button type="button" class="btn" style="background: #17a2b8" onclick="createManualTable()">
             + Manual Entry
           </button>
+
+          <a href="combined_driver_ot.html" class="btn" style="background: #8b5cf6; text-decoration: none;">
+            + Combined Driver OT 📑
+          </a>
 
           <div class="selector-wrapper">
             <label>Driver:</label>
@@ -140,8 +191,8 @@
         </div>
       </div>
 
-      <div id="dynamicBillsContainer" style="display: flex; flex-direction: column; gap: 40px; margin-bottom: 50px;">
-        <div style="text-align: center; padding: 50px; color: #666; background: white; border-radius: 8px; border: 1px dashed #ccc;">
+      <div id="dynamicBillsContainer">
+        <div style="text-align: center; padding: 50px; color: #666; background: white; border-radius: 8px; border: 1px dashed #ccc; width: 100%; box-sizing: border-box;">
           <h2>No Driver Bills Generated Yet</h2>
           <p>Click "Fetch Data", select drivers/sites, and click "Arrange By Driver ✨".</p>
         </div>

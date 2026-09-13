@@ -14,28 +14,84 @@ document.addEventListener("DOMContentLoaded", () => {
   initMonth();
 });
 
+const monthsList = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+function formatShortMonth(fullVal) {
+  const parts = String(fullVal).trim().split(" ");
+  if (parts.length >= 2) {
+    return parts[0].substring(0, 3) + " " + parts[1].substring(2, 4);
+  }
+  return fullVal;
+}
+
 function initMonth() {
   const optsContainer = document.getElementById("monthOptions");
   optsContainer.innerHTML = "";
-  const months = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
-  ];
   let currentD = new Date();
   for (let y = 2026; y <= currentD.getFullYear(); y++) {
     let mEnd = y === currentD.getFullYear() ? currentD.getMonth() : 11;
     for (let m = 0; m <= mEnd; m++) {
-      let value = `${months[m]} ${y}`;
+      let value = `${monthsList[m]} ${y}`;
       optsContainer.innerHTML += `<div class="custom-dropdown-item" onclick="selectMonth('${value}')">${value}</div>`;
     }
   }
-  selectMonth(`${months[currentD.getMonth()]} ${currentD.getFullYear()}`);
+  selectMonth(`${monthsList[currentD.getMonth()]} ${currentD.getFullYear()}`);
 }
 
 function selectMonth(val) {
-  document.getElementById("selectedMonthText").innerText = val;
+  const textEl = document.getElementById("selectedMonthText");
+  textEl.dataset.fullMonth = val;
+  textEl.innerText = formatShortMonth(val);
   document.getElementById("monthOptions").classList.remove("show");
-  fetchDataFromERP();
+
+  let activeDrivers = [];
+  document.querySelectorAll(".bill-card .driver").forEach((inp) => {
+    let d = inp.value.trim();
+    if (d && !activeDrivers.includes(d)) activeDrivers.push(d);
+  });
+
+  fetchDataFromERP(activeDrivers);
+}
+
+function prevMonthDriverBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.dataset.fullMonth || textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 0) {
+    mIdx = 11;
+    y -= 1;
+  } else {
+    mIdx -= 1;
+  }
+  selectMonth(`${monthsList[mIdx]} ${y}`);
+}
+
+function nextMonthDriverBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.dataset.fullMonth || textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 11) {
+    mIdx = 0;
+    y += 1;
+  } else {
+    mIdx += 1;
+  }
+  selectMonth(`${monthsList[mIdx]} ${y}`);
 }
 
 function toggleDropdown(id) {
@@ -84,16 +140,65 @@ function updateSelectTexts() {
 }
 
 function getShortDate() {
-  let val = document.getElementById("selectedMonthText").innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  let val = (textEl?.dataset?.fullMonth || textEl?.innerText || "").trim();
   let parts = val.split(" ");
-  if (parts.length >= 2)
-    return parts[0].substring(0, 3) + " " + parts[1].substring(2, 4);
+  if (parts.length >= 2) {
+    let yearPart = parts[1].length === 4 ? parts[1].substring(2, 4) : parts[1];
+    return parts[0].substring(0, 3) + " " + yearPart;
+  }
   return val;
 }
 
 // 🟢 FETCH DATA
-function fetchDataFromERP() {
-  const fullMonth = document.getElementById("selectedMonthText").innerText.trim();
+function cleanPlate(p) {
+  return String(p || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function calculateClientLogHours(records, monthIndex, year, siteName, specialRules) {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const normalizedSite = String(siteName || "").split("&")[0].trim().toUpperCase();
+  let nhr = 0, othr = 0;
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const record = (records || []).find((item) => parseInt(item.record_date, 10) === day);
+    const workHours = record ? parseFloat(record.calc_time) || 0 : 0;
+    let status = record ? String(record.bd || "").trim().toUpperCase() : "";
+    const formattedDate = new Date(year, monthIndex, day)
+      .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const specialRule = (specialRules || []).find(
+      (rule) =>
+        Array.isArray(rule.sites) &&
+        Array.isArray(rule.dates) &&
+        (rule.sites.includes("ALL") || rule.sites.includes(normalizedSite)) &&
+        rule.dates.includes(formattedDate),
+    );
+
+    if (!record && specialRule && specialRule.rule_type !== "FULL_OT") {
+      status = specialRule.rule_type;
+    }
+
+    const isFullOt = new Date(year, monthIndex, day).getDay() === 5 ||
+      day === 31 ||
+      specialRule?.rule_type === "FULL_OT";
+
+    if (["ID", "NP", "W", "P"].includes(status)) {
+      if (isFullOt) othr += 10;
+      else nhr += 10;
+    } else if (!["B", "H", "A", "L", "S"].includes(status) && workHours > 0) {
+      if (isFullOt) othr += workHours;
+      else {
+        nhr += Math.min(workHours, 10);
+        othr += Math.max(workHours - 10, 0);
+      }
+    }
+  }
+  return { nhr, othr };
+}
+
+function fetchDataFromERP(autoArrangeDrivers = []) {
+  const textEl = document.getElementById("selectedMonthText");
+  const fullMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   const token =
     localStorage.getItem("invoiceToken") ||
     localStorage.getItem("timesheetToken") ||
@@ -107,7 +212,7 @@ function fetchDataFromERP() {
     .then((res) => {
       document.getElementById("loader").style.display = "none";
       if (res.success) {
-        processFetchedData(res);
+        processFetchedData(res, autoArrangeDrivers);
       } else {
         showToast("Error: " + res.message);
       }
@@ -118,32 +223,68 @@ function fetchDataFromERP() {
     });
 }
 
-function processFetchedData(res) {
-  const currentMonth = document.getElementById("selectedMonthText").innerText.trim();
+function processFetchedData(res, autoArrangeDrivers = []) {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   savedBillingData = res.saved_bills || [];
+  const timesheetRows = res.timesheets || [];
+  const invoiceRows = res.invoices || [];
+  const plateLogs = res.plate_logs || [];
+  const specialRules = res.special_rules || [];
+  const targetMonthIdx = res.target_month_idx;
+  const targetYearNum = res.target_year_num;
 
   let rows = [];
   (res.vehicles || []).forEach((v) => {
-    let pNo = (v.plate_no || "").trim().toUpperCase();
-    if (!pNo) return;
+    let masterPlate = (v.plate_no || "").trim().toUpperCase();
+    if (!masterPlate) return;
 
-    let dLogs = (res.driver_logs || []).filter((d) => (d.plate_no || "").trim().toUpperCase() === pNo);
-    let sLogs = (res.site_logs || []).filter((s) => (s.plate_no || "").trim().toUpperCase() === pNo);
+    let relatedPlates = [masterPlate];
+    (plateLogs || []).forEach((pl) => {
+      let op = (pl.old_plate_no || "").trim().toUpperCase();
+      let np = (pl.new_plate_no || "").trim().toUpperCase();
+      if (op === masterPlate && !relatedPlates.includes(np)) relatedPlates.push(np);
+      if (np === masterPlate && !relatedPlates.includes(op)) relatedPlates.push(op);
+    });
+
+    let dLogs = (res.driver_logs || []).filter((d) => relatedPlates.includes((d.plate_no || "").trim().toUpperCase()));
+    let sLogs = (res.site_logs || []).filter((s) => relatedPlates.includes((s.plate_no || "").trim().toUpperCase()));
 
     let driver = dLogs.length > 0 ? dLogs[0].driver_name : (v.driver_name || "Unassigned");
     let site = sLogs.length > 0 ? sLogs[0].site_name : (v.site_name || "N/A");
 
+    function matchesPlate(targetP) {
+      if (!targetP) return false;
+      let raw = String(targetP).trim().toUpperCase();
+      let parts = raw.split(/➔|→|->/).map(p => cleanPlate(p)).filter(Boolean);
+      let cleanRelated = relatedPlates.map(p => cleanPlate(p));
+      return parts.some(p => cleanRelated.includes(p)) || cleanRelated.includes(cleanPlate(raw));
+    }
+
     let saved = savedBillingData.find(
       (b) =>
-        (b.plate_no || "").trim().toUpperCase() === pNo &&
+        matchesPlate(b.plate_no) &&
         (b.site_name || "").trim().toUpperCase() === site.trim().toUpperCase()
     );
 
     let driverOt = saved ? parseFloat(saved.driver_ot) || 0 : 0;
     let driverAmount = saved ? parseFloat(saved.driver_amount) || 0 : 0;
-    let rate = driverOt > 0 ? Number((driverAmount / driverOt).toFixed(2)) : 15;
+    let rate = driverOt > 0 && driverAmount > 0 ? Number((driverAmount / driverOt).toFixed(2)) : 15;
 
-    let inv = (res.invoices || []).find((i) => (i.plate_no || "").trim().toUpperCase() === pNo);
+    // Logsheet Calculations
+    const vehicleTimesheets = timesheetRows.filter((t) => matchesPlate(t.plate_no));
+    const logHours = targetMonthIdx >= 0
+      ? calculateClientLogHours(vehicleTimesheets, targetMonthIdx, targetYearNum, site, specialRules)
+      : { nhr: 0, othr: 0 };
+
+    // Bill Summary & Supplier Hours
+    const matchingInvoices = invoiceRows.filter((i) => matchesPlate(i.plate_no));
+    const inv = matchingInvoices.find(
+      (item) => String(item.site_name || "").trim().toUpperCase() === String(site || "").trim().toUpperCase(),
+    ) || matchingInvoices[0];
+
+    let supNr = saved ? parseFloat(saved.nhr) || 0 : 0;
+    let supOt = saved ? parseFloat(saved.othr) || 0 : 0;
 
     rows.push({
       billing_month: currentMonth,
@@ -151,20 +292,36 @@ function processFetchedData(res) {
       vehicle_type: v.vehicle_type || "-",
       driver: driver,
       site_name: site,
-      plate_no: pNo,
+      plate_no: masterPlate,
+      related_plates: relatedPlates,
       driver_ot: driverOt,
       rate: rate,
-      driver_amount: driverAmount,
-      log_nr: 0,
-      log_ot: 0,
+      driver_amount: driverAmount || (driverOt * rate),
+      log_nr: logHours.nhr,
+      log_ot: logHours.othr,
       bill_nr: inv ? parseFloat(inv.bill_nr) || 0 : 0,
       bill_ot: inv ? parseFloat(inv.bill_ot) || 0 : 0,
+      sup_nr: supNr,
+      sup_ot: supOt,
     });
   });
 
   masterData = rows;
   populateFilters();
-  showToast(`Loaded ${rows.length} driver records.`);
+
+  if (autoArrangeDrivers && autoArrangeDrivers.length > 0) {
+    const container = document.getElementById("dynamicBillsContainer");
+    container.innerHTML = "";
+    autoArrangeDrivers.forEach((drName, idx) => {
+      let drRows = masterData.filter(m => (m.driver || "").trim().toUpperCase() === drName.trim().toUpperCase());
+      if (drRows.length > 0) {
+        container.appendChild(createDriverBillCard(drName, drRows, `driver_${idx + 1}`));
+      }
+    });
+    showToast(`Month changed! Re-loaded driver tables.`);
+  } else {
+    showToast(`Loaded ${rows.length} driver records.`);
+  }
 }
 
 function populateFilters() {
@@ -251,23 +408,25 @@ function createManualTable() {
 function generateDriverRowHTML(index, item) {
   return `
     <tr>
-      <td class="row-num">${index}</td>
-      <td class="date-cell">${item.date || getShortDate()}</td>
-      <td><input type="text" class="vtype" value="${item.vehicle_type || ""}"></td>
-      <td><input type="text" class="driver" value="${item.driver || ""}"></td>
-      <td class="site-col"><input type="text" class="site" value="${item.site_name || ""}"></td>
+      <td class="row-num" style="text-align:center; font-weight:600; color:#64748b;">${index}</td>
+      <td class="date-cell" style="text-align:center; font-weight:600; color:#1a4d80;">${item.date || getShortDate()}</td>
+      <td><input type="text" class="vtype" value="${item.vehicle_type || ""}" style="width:100%; border:none; background:transparent; padding:4px 6px; box-sizing:border-box; font-family:inherit; font-size:12px; outline:none;"></td>
+      <td><input type="text" class="driver" value="${item.driver || ""}" style="width:100%; border:none; background:transparent; padding:4px 6px; box-sizing:border-box; font-family:inherit; font-size:12px; outline:none;"></td>
+      <td class="site-col"><input type="text" class="site" value="${item.site_name || ""}" style="width:100%; border:none; background:transparent; padding:4px 6px; box-sizing:border-box; font-family:inherit; font-size:12px; outline:none;"></td>
       <td class="autocomplete-wrapper col-plate">
-        <input type="text" class="plate" value="${item.plate_no || ""}" oninput="showPlateSuggestions(this)" onblur="handlePlateBlur(this)" autocomplete="off">
+        <input type="text" class="plate" value="${item.plate_no || ""}" oninput="showPlateSuggestions(this)" onkeydown="handleDriverPlateKeyDown(event, this)" onblur="handlePlateBlur(this)" autocomplete="off" style="width:100%; border:none; background:transparent; text-align:center; font-weight:bold; font-family:inherit; font-size:12px; outline:none; text-transform:uppercase;">
         <div class="suggestion-box"></div>
       </td>
-      <td><input type="number" step="any" class="dr-ot" value="${item.driver_ot || 0}" oninput="calcDriverRow(this)"></td>
-      <td class="rate-col"><input type="number" step="any" class="dr-rate" value="${item.rate || 15}" oninput="calcDriverRow(this)"></td>
-      <td><input type="number" step="any" class="dr-amt" value="${item.driver_amount || 0}" readonly></td>
-      <td class="site-col no-export">${item.log_nr || 0}</td>
-      <td class="site-col no-export">${item.log_ot || 0}</td>
-      <td class="site-col no-export">${item.bill_nr || 0}</td>
-      <td class="site-col no-export">${item.bill_ot || 0}</td>
-      <td class="no-export"><button type="button" class="btn-remove" onclick="removeDriverRow(this)">✖</button></td>
+      <td><input type="number" step="any" class="dr-ot" value="${item.driver_ot || 0}" oninput="calcDriverRow(this)" style="width:100%; border:none; background:transparent; text-align:center; font-weight:600; font-family:inherit; font-size:12px; outline:none;"></td>
+      <td class="rate-col"><input type="number" step="any" class="dr-rate" value="${item.rate || 15}" oninput="calcDriverRow(this)" style="width:100%; border:none; background:transparent; text-align:center; font-family:inherit; font-size:12px; outline:none;"></td>
+      <td><input type="number" step="any" class="dr-amt" value="${item.driver_amount || 0}" readonly style="width:100%; border:none; background:transparent; text-align:center; font-weight:bold; font-family:inherit; font-size:12px; outline:none;"></td>
+      <td class="site-col no-export log-nr" style="background:rgba(22, 101, 52, 0.04); text-align:center;">${item.log_nr || 0}</td>
+      <td class="site-col no-export log-ot" style="background:rgba(22, 101, 52, 0.04); text-align:center;">${item.log_ot || 0}</td>
+      <td class="site-col no-export bill-nr" style="background:rgba(30, 64, 175, 0.04); text-align:center;">${item.bill_nr || 0}</td>
+      <td class="site-col no-export bill-ot" style="background:rgba(30, 64, 175, 0.04); text-align:center;">${item.bill_ot || 0}</td>
+      <td class="site-col no-export sup-nr" style="background:rgba(107, 33, 168, 0.04); color:#6b21a8; font-weight:600; text-align:center;">${item.sup_nr || 0}</td>
+      <td class="site-col no-export sup-ot" style="background:rgba(107, 33, 168, 0.04); color:#6b21a8; font-weight:600; text-align:center;">${item.sup_ot || 0}</td>
+      <td class="no-export" style="text-align:center;"><button type="button" class="btn-remove" onclick="removeDriverRow(this)">✖</button></td>
     </tr>
   `;
 }
@@ -298,32 +457,34 @@ function createDriverBillCard(driverName, items, id, isManual = false) {
       <table class="billTable">
         <thead>
           <tr>
-            <th class="col-num" style="width:45px;">#</th>
-            <th class="col-date" style="width:90px;">Date</th>
-            <th class="col-vtype">Vehicle Type</th>
-            <th class="col-driver">Driver</th>
-            <th class="col-site site-col">Site</th>
-            <th class="col-plate" style="width:130px;">Plate No</th>
-            <th class="col-small" style="width:95px;">Over Time</th>
-            <th class="col-rate rate-col" style="width:80px;">Rate</th>
-            <th class="col-money" style="width:105px;">Amount</th>
-            <th class="col-small site-col no-export">Log NR</th>
-            <th class="col-small site-col no-export">Log OT</th>
-            <th class="col-small site-col no-export">Bill NR</th>
-            <th class="col-small site-col no-export">Bill OT</th>
-            <th class="col-action no-export" style="width:50px;">Act</th>
+            <th class="col-num" style="width:40px;">#</th>
+            <th class="col-date" style="width:80px;">Date</th>
+            <th class="col-vtype" style="width:150px;">Vehicle Type</th>
+            <th class="col-driver" style="width:180px;">Driver</th>
+            <th class="col-site site-col" style="width:150px;">Site</th>
+            <th class="col-plate" style="width:120px;">Plate No</th>
+            <th class="col-small" style="width:85px;">Over Time</th>
+            <th class="col-rate rate-col" style="width:75px;">Rate</th>
+            <th class="col-money" style="width:95px;">Amount</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#166534; color:white;">Log NR</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#166534; color:white;">Log OT</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#1e40af; color:white;">Bill NR</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#1e40af; color:white;">Bill OT</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#6b21a8; color:white;">Sup NR</th>
+            <th class="col-small site-col no-export" style="width:65px; background:#6b21a8; color:white;">Sup OT</th>
+            <th class="col-action no-export" style="width:45px;">Act</th>
           </tr>
         </thead>
         <tbody class="tableBody">
           ${rowsHtml}
         </tbody>
         <tfoot>
-          <tr class="total-row">
+          <tr class="total-row" style="background:#f8fafc; font-weight:bold;">
             <td colspan="6" class="footer-colspan" style="text-align:right; padding-right:15px; font-weight:bold;">Total:</td>
             <td class="grandHr" style="font-weight:bold; text-align:center;">0</td>
             <td class="rate-col" style="text-align:center;"></td>
             <td class="grandAmt" style="font-weight:bold; text-align:center;">0</td>
-            <td colspan="4" class="site-col no-export"></td>
+            <td colspan="6" class="site-col no-export" style="background:transparent;"></td>
             <td class="no-export" style="text-align:center;">
               <button type="button" class="btn-add-circle" onclick="addDriverRow('${id}')">+</button>
             </td>
@@ -348,15 +509,12 @@ function addDriverRow(cardId) {
   const card = document.getElementById(`driverCard_${cardId}`);
   const tbody = card.querySelector(".tableBody");
   const index = tbody.rows.length + 1;
-  
-  // ആദ്യ വരിയിൽ ഡ്രൈവറുടെ പേരുണ്ടെങ്കിൽ അത് തന്നെ ഓട്ടോമാറ്റിക്കായി പുതിയ വരിയിലും എടുക്കുന്നു
-  const firstRowDriver = tbody.querySelector(".driver")?.value.trim() || "";
 
   const tr = document.createElement("tr");
   tr.innerHTML = generateDriverRowHTML(index, {
     date: getShortDate(),
     vehicle_type: "",
-    driver: firstRowDriver,
+    driver: "",
     site_name: "",
     plate_no: "",
     driver_ot: 0,
@@ -366,6 +524,8 @@ function addDriverRow(cardId) {
     log_ot: 0,
     bill_nr: 0,
     bill_ot: 0,
+    sup_nr: 0,
+    sup_ot: 0,
   });
   tbody.appendChild(tr);
 }
@@ -420,9 +580,9 @@ function showPlateSuggestions(input) {
 
   if (matches.length > 0) {
     box.innerHTML = "";
-    matches.forEach((m) => {
+    matches.forEach((m, index) => {
       let div = document.createElement("div");
-      div.className = "suggestion-item";
+      div.className = "suggestion-item" + (index === 0 ? " active" : "");
       div.innerText = m;
       div.onmousedown = function (e) {
         e.preventDefault();
@@ -448,18 +608,28 @@ function handlePlateBlur(input) {
 }
 
 function autoFillDriverPlate(input, plateNo) {
-  const match = masterData.find((d) => (d.plate_no || "").toUpperCase() === plateNo.toUpperCase());
+  const cleanVal = cleanPlate(plateNo);
+  const match = masterData.find((d) => {
+    let p = cleanPlate(d.plate_no);
+    let rp = (d.related_plates || []).map(cleanPlate);
+    return p === cleanVal || rp.includes(cleanVal);
+  });
   if (!match) return;
 
   const row = input.closest("tr");
   if (match.vehicle_type) row.querySelector(".vtype").value = match.vehicle_type;
-  if (match.driver && !row.querySelector(".driver").value.trim()) {
-    row.querySelector(".driver").value = match.driver;
-  }
+  if (match.driver) row.querySelector(".driver").value = match.driver;
   if (match.site_name) row.querySelector(".site").value = match.site_name;
-  if (match.driver_ot) row.querySelector(".dr-ot").value = match.driver_ot;
+  if (match.driver_ot !== undefined) row.querySelector(".dr-ot").value = match.driver_ot;
   if (match.rate) row.querySelector(".dr-rate").value = match.rate;
-  if (match.driver_amount) row.querySelector(".dr-amt").value = match.driver_amount;
+  if (match.driver_amount !== undefined) row.querySelector(".dr-amt").value = match.driver_amount;
+
+  if (row.querySelector(".log-nr")) row.querySelector(".log-nr").innerText = match.log_nr || 0;
+  if (row.querySelector(".log-ot")) row.querySelector(".log-ot").innerText = match.log_ot || 0;
+  if (row.querySelector(".bill-nr")) row.querySelector(".bill-nr").innerText = match.bill_nr || 0;
+  if (row.querySelector(".bill-ot")) row.querySelector(".bill-ot").innerText = match.bill_ot || 0;
+  if (row.querySelector(".sup-nr")) row.querySelector(".sup-nr").innerText = match.sup_nr || 0;
+  if (row.querySelector(".sup-ot")) row.querySelector(".sup-ot").innerText = match.sup_ot || 0;
 
   calcDriverRow(input);
 }
@@ -544,7 +714,8 @@ function submitBulkDriverData() {
     localStorage.getItem("timesheetToken") ||
     localStorage.getItem("token");
   const cards = document.querySelectorAll(".bill-card");
-  const currentMonth = document.getElementById("selectedMonthText").innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  const currentMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
 
   let items = [];
   cards.forEach((card) => {
@@ -599,4 +770,52 @@ function showToast(msg) {
   t.innerText = msg;
   t.className = "show";
   setTimeout(() => (t.className = ""), 3000);
+}
+
+function handleDriverPlateKeyDown(e, input) {
+  const box = input.parentElement.querySelector(".suggestion-box");
+  if (box && box.style.display === "block") {
+    let items = box.querySelectorAll(".suggestion-item");
+    let activeIndex = Array.from(items).findIndex((item) =>
+      item.classList.contains("active"),
+    );
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      activeIndex = (activeIndex + 1) % items.length;
+      updateActiveSuggestion(items, activeIndex, box);
+      return;
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      activeIndex = (activeIndex - 1 + items.length) % items.length;
+      updateActiveSuggestion(items, activeIndex, box);
+      return;
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      e.stopPropagation();
+      let targetVal = activeIndex > -1 ? items[activeIndex].innerText : items[0].innerText;
+      input.value = targetVal;
+      box.style.display = "none";
+      autoFillDriverPlate(input, targetVal);
+      return;
+    } else if (e.key === "Escape") {
+      box.style.display = "none";
+      return;
+    }
+  }
+}
+
+function updateActiveSuggestion(items, index, box) {
+  items.forEach((item) => item.classList.remove("active"));
+  if (items[index]) {
+    items[index].classList.add("active");
+    const itemTop = items[index].offsetTop;
+    if (itemTop < box.scrollTop) box.scrollTop = itemTop;
+    else if (
+      itemTop + items[index].offsetHeight >
+      box.scrollTop + box.offsetHeight
+    ) {
+      box.scrollTop = itemTop + items[index].offsetHeight - box.offsetHeight;
+    }
+  }
 }
