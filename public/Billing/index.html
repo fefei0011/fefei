@@ -87,22 +87,39 @@
               >dashboard</i
             >
           </button>
-          <div class="selector-wrapper">
-            <label class="month-label">Month:</label>
+          <!-- 🟢 Month Selector with ◀ Prev / Next ▶ Buttons -->
+          <div class="selector-wrapper" style="display: flex; align-items: center; gap: 4px;">
+            <button
+              type="button"
+              onclick="prevMonthBilling()"
+              title="Previous Month"
+              style="padding: 4px 7px; border: 1px solid #cbd5e1; background: white; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; color: #475569;"
+            >
+              ◀
+            </button>
             <div
               class="custom-dropdown"
               id="monthDropdownContainer"
-              style="width: 120px"
+              style="width: 85px"
             >
               <div
                 class="custom-dropdown-selected"
                 onclick="toggleDropdown('monthOptions')"
+                style="padding: 5px 6px; font-size: 12px; font-weight: bold;"
               >
                 <span id="selectedMonthText">Loading...</span>
-                <span style="font-size: 10px">▼</span>
+                <span style="font-size: 10px; margin-left: 2px;">▼</span>
               </div>
-              <div class="custom-dropdown-options" id="monthOptions"></div>
+              <div class="custom-dropdown-options" id="monthOptions" style="width: 140px;"></div>
             </div>
+            <button
+              type="button"
+              onclick="nextMonthBilling()"
+              title="Next Month"
+              style="padding: 4px 7px; border: 1px solid #cbd5e1; background: white; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; color: #475569;"
+            >
+              ▶
+            </button>
           </div>
 
           <button
@@ -126,12 +143,12 @@
             + Combined Bill
           </a>
           <a href="driverotindex.html" class="btn" style="background: #d97706; text-decoration: none;">
-  Driver OT Bill 🚚
-</a>
+            Driver OT Bill 🚚
+          </a>
 
           <div class="selector-wrapper">
             <label>Owner:</label>
-            <div class="custom-dropdown" style="width: 150px">
+            <div class="custom-dropdown" style="width: 140px">
               <div
                 class="custom-dropdown-selected"
                 onclick="toggleDropdown('ownerOptions')"
@@ -168,7 +185,7 @@
 
           <div class="selector-wrapper">
             <label>Site:</label>
-            <div class="custom-dropdown" style="width: 150px">
+            <div class="custom-dropdown" style="width: 140px">
               <div
                 class="custom-dropdown-selected"
                 onclick="toggleDropdown('siteOptions')"
@@ -203,106 +220,70 @@
             </div>
           </div>
 
-          <button
-            type="button"
-            class="btn"
-            style="background: #6f42c1"
-            onclick="setArrangeMode('owner_comp')"
-          >
-            Arrange ✨
-          </button>
-
-          <button
-            type="button"
-            class="btn"
-            style="background: #007bff"
-            onclick="setArrangeMode('site')"
-          >
-            <i class="material-icons" style="font-size: 16px">business</i>
-            Site
-          </button>
-
-          <div class="custom-dropdown" style="display: inline-block">
+          <!-- 🟢 Compact Tools & Arrange Actions Dropdown -->
+          <div class="custom-dropdown" style="display: inline-block;">
             <button
               type="button"
               class="btn"
-              style="background: #e83e8c"
-              onclick="toggleDropdown('ownerArrangeDropdown')"
+              style="background: #6f42c1;"
+              onclick="toggleDropdown('toolsDropdownMenu')"
+              title="Arrange & Table Operations"
             >
-              <i class="material-icons" style="font-size: 16px">person</i> By
-              Owner <span style="font-size: 10px; margin-left: 5px">▼</span>
+              ⚙️ Tools ▾
             </button>
             <div
               class="custom-dropdown-options"
-              id="ownerArrangeDropdown"
-              style="width: 190px; text-align: left; margin-top: 5px"
+              id="toolsDropdownMenu"
+              style="width: 215px; text-align: left; margin-top: 5px; z-index: 10000;"
             >
               <div
                 class="custom-dropdown-item"
-                onclick="
-                  setArrangeMode('split');
-                  document
-                    .getElementById('ownerArrangeDropdown')
-                    .classList.remove('show');
-                "
+                style="font-weight: 600; color: #6f42c1;"
+                onclick="setArrangeMode('owner_comp'); document.getElementById('toolsDropdownMenu').classList.remove('show');"
               >
-                <i
-                  class="material-icons"
-                  style="font-size: 16px; margin-right: 5px; color: #6f42c1"
-                  >business</i
-                >
-                Based on Site
+                ✨ Arrange (Company)
               </div>
               <div
                 class="custom-dropdown-item"
-                onclick="
-                  setArrangeMode('owner_comp');
-                  document
-                    .getElementById('ownerArrangeDropdown')
-                    .classList.remove('show');
-                "
+                style="font-weight: 600; color: #007bff;"
+                onclick="setArrangeMode('site'); document.getElementById('toolsDropdownMenu').classList.remove('show');"
               >
-                <i
-                  class="material-icons"
-                  style="font-size: 16px; margin-right: 5px; color: #ff9800"
-                  >domain</i
-                >
-                Based on Company
+                🏢 Arrange by Site
               </div>
               <div
                 class="custom-dropdown-item"
-                onclick="
-                  setArrangeMode('owner_all');
-                  document
-                    .getElementById('ownerArrangeDropdown')
-                    .classList.remove('show');
-                "
+                style="font-weight: 600; color: #e83e8c;"
+                onclick="setArrangeMode('split'); document.getElementById('toolsDropdownMenu').classList.remove('show');"
               >
-                <i
-                  class="material-icons"
-                  style="font-size: 16px; margin-right: 5px; color: #007bff"
-                  >layers</i
-                >
-                All in One
+                👤 Owner: Based on Site
+              </div>
+              <div
+                class="custom-dropdown-item"
+                style="font-weight: 600; color: #ff9800;"
+                onclick="setArrangeMode('owner_all'); document.getElementById('toolsDropdownMenu').classList.remove('show');"
+              >
+                📑 Owner: All in One
+              </div>
+              <div style="border-top: 1px solid #e2e8f0; margin: 4px 0;"></div>
+              <div
+                class="custom-dropdown-item"
+                style="font-weight: 600; color: #17a2b8;"
+                onclick="unhideAll(); document.getElementById('toolsDropdownMenu').classList.remove('show');"
+              >
+                👁️ Unhide All Rows/Cols
+              </div>
+              <div
+                class="custom-dropdown-item"
+                style="font-weight: 600; color: #dc3545;"
+                onclick="downloadAllAsZip(); document.getElementById('toolsDropdownMenu').classList.remove('show');"
+              >
+                📦 Download All ZIP
               </div>
             </div>
           </div>
 
-          <button type="button" class="btn" style="background: #17a2b8" onclick="unhideAll()">
-            <i class="material-icons" style="font-size: 16px">visibility</i>
-          </button>
-
           <button type="button" class="btn btn-save" onclick="submitBulkData()">
             Save to ERP 💾
-          </button>
-
-          <button
-            type="button"
-            class="btn"
-            style="background: #dc3545"
-            onclick="downloadAllAsZip()"
-          >
-            ZIP📦
           </button>
 
           <button type="button" class="btn btn-reset" onclick="executeLogout()">

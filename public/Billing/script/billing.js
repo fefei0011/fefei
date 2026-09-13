@@ -207,11 +207,75 @@ function initMonth() {
   selectMonth(`${months[currentD.getMonth()]} ${currentD.getFullYear()}`);
 }
 
+const monthsList = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function prevMonthBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 0) {
+    mIdx = 11;
+    y -= 1;
+  } else {
+    mIdx -= 1;
+  }
+
+  selectMonth(`${monthsList[mIdx]} ${y}`);
+}
+
+function nextMonthBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 11) {
+    mIdx = 0;
+    y += 1;
+  } else {
+    mIdx += 1;
+  }
+
+  selectMonth(`${monthsList[mIdx]} ${y}`);
+}
+
+function formatShortMonth(fullVal) {
+  const parts = String(fullVal).trim().split(" ");
+  if (parts.length >= 2) {
+    return parts[0].substring(0, 3) + " " + parts[1].substring(2, 4);
+  }
+  return fullVal;
+}
+
 function selectMonth(val) {
-  document.getElementById("selectedMonthText").innerText = val;
+  const textEl = document.getElementById("selectedMonthText");
+  textEl.dataset.fullMonth = val;
+  textEl.innerText = formatShortMonth(val);
   document.getElementById("monthOptions").classList.remove("show");
 
-  // സ്ക്രീനിൽ നിലവിൽ ഉള്ള owner names track ചെയ്യുക
   let activeOwners = [];
   document.querySelectorAll(".bill-card").forEach((card) => {
     let ownerInput = card.querySelector(".owner-input");
@@ -225,6 +289,46 @@ function selectMonth(val) {
   savedBillingData = [];
 
   fetchDataFromERP(activeOwners);
+}
+
+function prevMonthBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.dataset.fullMonth || textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 0) {
+    mIdx = 11;
+    y -= 1;
+  } else {
+    mIdx -= 1;
+  }
+
+  selectMonth(`${monthsList[mIdx]} ${y}`);
+}
+
+function nextMonthBilling() {
+  const textEl = document.getElementById("selectedMonthText");
+  const currentVal = textEl.dataset.fullMonth || textEl.innerText.trim();
+  const parts = currentVal.split(" ");
+  if (parts.length < 2) return;
+
+  let mIdx = monthsList.indexOf(parts[0]);
+  let y = parseInt(parts[1], 10);
+  if (mIdx === -1 || isNaN(y)) return;
+
+  if (mIdx === 11) {
+    mIdx = 0;
+    y += 1;
+  } else {
+    mIdx += 1;
+  }
+
+  selectMonth(`${monthsList[mIdx]} ${y}`);
 }
 
 function getShortDate() {
@@ -286,9 +390,8 @@ function updateSelectTexts() {
 }
 
 function fetchDataFromERP(autoArrangeOwners = []) {
-  const fullMonth = document
-    .getElementById("selectedMonthText")
-    .innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  const fullMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   const token = localStorage.getItem("token");
   if (!fullMonth || fullMonth === "Loading...")
     return showToast("Select a month.");
@@ -402,21 +505,33 @@ function populateCheckboxes(isFirstLoad = true, prevOwners = [], prevSites = [])
   let oList = document.getElementById("ownerList");
   let sList = document.getElementById("siteList");
 
+  // മുൻപ് 'Select All' ആയിരുന്നോ അതോ യൂസർ ചിലത് മാത്രം മാറ്റി വെച്ചതാണോ എന്ന് പരിശോധിക്കുന്നു
+  let wasAllOwnersSelected = isFirstLoad || (document.getElementById("selectAllOwners") && document.getElementById("selectAllOwners").checked);
+  let wasAllSitesSelected = isFirstLoad || (document.getElementById("selectAllSites") && document.getElementById("selectAllSites").checked);
+
   oList.querySelectorAll(".dynamic-item").forEach((e) => e.remove());
   sList.querySelectorAll(".dynamic-item").forEach((e) => e.remove());
 
   owners.forEach((o) => {
-    // 🟢 NEW: ആദ്യത്തെ ലോഡിങ്ങിൽ എല്ലാം ചെക്ക് ചെയ്യും. അല്ലെങ്കിൽ പഴയത് പോലെ നിലനിർത്തും.
-    let isChecked = isFirstLoad ? "checked" : (prevOwners.includes(o) ? "checked" : "");
+    // മുൻപ് Select All ആയിരുന്നെങ്കിൽ പുതിയ ഓണറും select ആകണം; അല്ലെങ്കിൽ പഴയ ലിസ്റ്റിൽ ഉള്ളതോ എന്ന് നോക്കണം
+    let isChecked = wasAllOwnersSelected ? "checked" : (prevOwners.includes(o) ? "checked" : "");
     oList.innerHTML += `<label class="check-item dynamic-item"><input type="checkbox" class="dynamic-check" value="${o}" ${isChecked} onchange="updateSelectTexts()"> ${o}</label>`;
   });
 
   sites.forEach((s) => {
-    // 🟢 NEW: ആദ്യത്തെ ലോഡിങ്ങിൽ എല്ലാം ചെക്ക് ചെയ്യും. അല്ലെങ്കിൽ പഴയത് പോലെ നിലനിർത്തും.
-    let isChecked = isFirstLoad ? "checked" : (prevSites.includes(s) ? "checked" : "");
+    // മുൻപ് Select All ആയിരുന്നെങ്കിൽ ആ മാസത്തിൽ വരുന്ന പുതിയ എല്ലാ സൈറ്റുകളും സ്വയം select ആകുന്നു
+    let isChecked = wasAllSitesSelected ? "checked" : (prevSites.includes(s) ? "checked" : "");
     sList.innerHTML += `<label class="check-item dynamic-item"><input type="checkbox" class="dynamic-check" value="${s}" ${isChecked} onchange="updateSelectTexts()"> ${s}</label>`;
   });
   
+  // Select All ചെക്ക്ബോക്സുകളുടെ നില അപ്ഡേറ്റ് ചെയ്യുന്നു
+  if (document.getElementById("selectAllOwners")) {
+    document.getElementById("selectAllOwners").checked = wasAllOwnersSelected;
+  }
+  if (document.getElementById("selectAllSites")) {
+    document.getElementById("selectAllSites").checked = wasAllSitesSelected;
+  }
+
   updateSelectTexts();
 }
 
@@ -2116,9 +2231,8 @@ async function downloadAllAsZip() {
 }
 
 function submitBulkData() {
-  const fullMonth = document
-    .getElementById("selectedMonthText")
-    .innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  const fullMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   const token = localStorage.getItem("token");
   const cards = document.querySelectorAll(".bill-card");
 
@@ -2348,9 +2462,8 @@ function goToDashboard() {
 }
 
 function fetchDataSilently() {
-  const fullMonth = document
-    .getElementById("selectedMonthText")
-    .innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  const fullMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   const token = localStorage.getItem("token");
   if (!fullMonth || fullMonth === "Loading...") return;
 
@@ -2372,9 +2485,8 @@ function fetchDataSilently() {
 ============================================== */
 
 function submitSingleCard(cardId) {
-  const fullMonth = document
-    .getElementById("selectedMonthText")
-    .innerText.trim();
+  const textEl = document.getElementById("selectedMonthText");
+  const fullMonth = (textEl.dataset.fullMonth || textEl.innerText).trim();
   const token = localStorage.getItem("token");
   const card = document.getElementById(`billCard_${cardId}`);
 
