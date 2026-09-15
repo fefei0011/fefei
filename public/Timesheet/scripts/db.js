@@ -895,6 +895,7 @@ async function initDB() {
       let drivers = logData.success ? logData.drivers : [];
       let sites = logData.success ? logData.sites : [];
       let owners = logData.success ? (logData.owners || []) : [];
+      let rates = logData.success ? (logData.rates || []) : [];
 
       tableData = dataJson.data.map((row) => {
         let dLog = drivers.find((d) => d.plate_no === row.plate_no);
@@ -912,7 +913,22 @@ async function initDB() {
           sLog && sLog.start_date !== "-" ? sLog.start_date : "";
         row.site_end_date = sLog && sLog.end_date !== "-" ? sLog.end_date : "";
 
-        row.site_rate = sLog && sLog.rate ? sLog.rate : "";
+        // 🟢 ലേറ്റസ്റ്റ് റേറ്റ് കണ്ടെത്തുന്നു: ആദ്യം ആക്ടീവ് Rate Log നോക്കും, ഇല്ലെങ്കിൽ Site Log അല്ലെങ്കിൽ Master
+        let curSiteName = (sLog && sLog.site_name) ? sLog.site_name.trim().toUpperCase() : "";
+        let rLog = rates.find((r) => {
+          let pMatch = (r.plate_no || "").trim().toUpperCase() === (row.plate_no || "").trim().toUpperCase();
+          let sMatch = !r.site_name || r.site_name.trim() === "" || r.site_name.trim().toUpperCase() === curSiteName;
+          return pMatch && sMatch && r.status === "Running";
+        });
+        if (!rLog) {
+          rLog = rates.find((r) => (r.plate_no || "").trim().toUpperCase() === (row.plate_no || "").trim().toUpperCase() && r.status === "Running");
+        }
+
+        if (rLog && rLog.rate) {
+          row.site_rate = rLog.rate;
+        } else {
+          row.site_rate = sLog && sLog.rate ? sLog.rate : row.rate || "";
+        }
         row.site_old_veh =
           sLog && sLog.old_vehicle_no ? sLog.old_vehicle_no : "";
         row.site_new_veh =
@@ -1912,7 +1928,20 @@ async function fetchLogs(plate, type) {
 
       let masterRow = tableData.find((x) => x.plate_no === plate);
       let activeS = (res.sites || []).find((s) => s.status === "Running");
-      if (activeS)
+      if (!activeS && (res.sites || []).length > 0) {
+        activeS = res.sites[0]; // റണ്ണിംഗ് ഇല്ലെങ്കിൽ ഏറ്റവും അവസാനത്തെ ലോഗ് എടുക്കും
+      }
+
+      if (activeS) {
+        let activeRate = activeS.rate;
+        let matchedRate = (res.rates || []).find(r => 
+          r.status === 'Running' && 
+          (!r.site_name || r.site_name.trim() === '' || r.site_name.trim().toUpperCase() === (activeS.site_name || '').trim().toUpperCase())
+        );
+        if (matchedRate && matchedRate.rate) {
+          activeRate = matchedRate.rate;
+        }
+
         editSiteLog(
           activeS.id,
           activeS.site_name,
@@ -1923,11 +1952,12 @@ async function fetchLogs(plate, type) {
           activeS.new_vehicle_no,
           activeS.asset_code,
           activeS.work_order_no,
-          activeS.rate,
+          activeRate,
           activeS.field_co,
           activeS.site_co,
           activeS.reason,
         );
+      }
       else if (masterRow && masterRow.site_name) {
         document.getElementById("slName").value = masterRow.site_name;
       }

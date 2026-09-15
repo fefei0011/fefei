@@ -507,9 +507,13 @@ router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
     }
 
     if (calculatedStatus === "Running") {
+      let siteCondition = site_name && site_name.trim() !== "" ? "AND UPPER(site_name)=UPPER($3)" : "";
+      let siteParams = [rate || null, plate_no];
+      if (siteCondition) siteParams.push(site_name);
+
       await client.query(
-        `UPDATE vehicle_site_log SET rate=$1 WHERE UPPER(plate_no)=UPPER($2) AND status='Running'`,
-        [rate || null, plate_no]
+        `UPDATE vehicle_site_log SET rate=$1 WHERE UPPER(plate_no)=UPPER($2) ${siteCondition}`,
+        siteParams
       );
       await client.query(
         `UPDATE timesheet_vehicles SET rate=$1 WHERE UPPER(plate_no)=UPPER($2)`,
