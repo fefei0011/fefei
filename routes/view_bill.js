@@ -354,7 +354,7 @@ router.get("/data", verifyViewBillUser, async (req, res) => {
 
     const [vehiclesRes, sitesRes, driversRes, timesheetsRes, invoicesRes, billingRes, specialRulesRes, ratesRes, ownersRes, plateLogsRes] = await Promise.all([
       pool.query("SELECT plate_no, owner_name, owner_mobile, site_name, vehicle_type, vat, driver_name, driver_mobile, field_co, site_co, rate FROM timesheet_vehicles"),
-      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co, status FROM vehicle_site_log"),
+      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co, status, vehicle_type FROM vehicle_site_log"),
       pool.query("SELECT plate_no, driver_name, driver_mobile, work_start_date, work_end_date, status FROM vehicle_driver_log"),
       pool.query("SELECT plate_no, record_date, calc_time, calc_distance, bd, remark, wrk_start, hmr_start FROM timesheet_daily_records WHERE month=$1 AND year=$2", [monthStr, yearStr]),
       pool.query("SELECT * FROM invoice_records WHERE month=$1", [fullMonth]),
@@ -584,9 +584,13 @@ if (!resolvedSearchMatch) return;
       let vatAmt = saved ? parseFloat(saved.vat_amount) || 0 : (isEffectiveVatYes === "Yes" ? rent * 0.15 : 0);
       let total = (saved && parseFloat(saved.total) > 0) ? parseFloat(saved.total) : (rent + vatAmt);
 
+      let effectiveVType = (activeSiteLog && activeSiteLog.vehicle_type && activeSiteLog.vehicle_type.trim() !== "" && activeSiteLog.vehicle_type !== "N/A")
+        ? activeSiteLog.vehicle_type.trim()
+        : (v.vehicle_type || "N/A");
+
       resultRows.push({
         date: monthStr.substring(0, 3) + " " + yearStr.substring(2, 4),
-        vtype: (saved && saved.vtype) ? saved.vtype : (v.vehicle_type || "N/A"),
+        vtype: (saved && saved.vtype && saved.vtype !== "N/A") ? saved.vtype : effectiveVType,
         driver: (saved && saved.driver) ? saved.driver : effectiveDriver,
         site: currentSiteName,
         plate_no: displayPlate,
@@ -827,7 +831,7 @@ const [savedResult, tsVehicleRes, rateLogRes, siteLogRes, ownerLogRes, plateLogR
   ),
   pool.query(`SELECT * FROM timesheet_vehicles WHERE UPPER(TRIM(plate_no)) = UPPER(TRIM($1)) LIMIT 1`, [actualMasterPlate]),
   pool.query(`SELECT * FROM vehicle_rate_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [allRelatedPlates]),
-  pool.query(`SELECT * FROM vehicle_site_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [allRelatedPlates]),
+  pool.query(`SELECT id, plate_no, site_name, rate, work_start_date, work_end_date, vehicle_type FROM vehicle_site_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [allRelatedPlates]),
   pool.query(`SELECT * FROM vehicle_owner_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [allRelatedPlates]),
   pool.query(
     `SELECT old_plate_no, new_plate_no, TO_CHAR(change_date, 'YYYY-MM-DD') as change_date 
@@ -971,13 +975,22 @@ const [savedResult, tsVehicleRes, rateLogRes, siteLogRes, ownerLogRes, plateLogR
         else if (sUpper.includes("MASAR")) autoCompany = "Masar Wheels";
         else if (sUpper.includes("WE1") || sUpper.includes("WE 1")) autoCompany = "We1 Track";
 
+        let matchedMonthSiteLog = siteLogs.find((s) => {
+          let st = s.work_start_date ? new Date(s.work_start_date) : new Date("2000-01-01");
+          let ed = s.work_end_date ? new Date(s.work_end_date) : new Date("2099-01-01");
+          return st <= mEnd && ed >= mStart;
+        });
+        let fallbackSiteVType = (matchedMonthSiteLog?.vehicle_type && matchedMonthSiteLog.vehicle_type.trim() !== "" && matchedMonthSiteLog.vehicle_type !== "N/A")
+          ? matchedMonthSiteLog.vehicle_type.trim()
+          : (vehicleInfo.vehicle_type || "N/A");
+
         combinedRows.push({
           billing_month: mStr,
           date: shortDate,
           company: autoCompany,
           owner: fallbackOwnerName,
           site_name: activeSite,
-          vtype: vehicleInfo.vehicle_type || "N/A",
+          vtype: fallbackSiteVType,
           driver: vehicleInfo.driver_name || "N/A",
           plate_no: rowPlateNo, // 🟢 മാസത്തിനനുസരിച്ചുള്ള യഥാർത്ഥ പ്ലേറ്റ് നൽകുന്നു
           nhr: 0,
