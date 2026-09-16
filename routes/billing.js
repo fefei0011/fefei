@@ -111,7 +111,7 @@ router.get("/vehicles", async (req, res) => {
       "SELECT plate_no, driver_name, work_start_date, work_end_date FROM vehicle_driver_log",
     );
     const siteLogs = await pool.query(
-      "SELECT plate_no, site_name, rate, work_start_date, work_end_date FROM vehicle_site_log",
+      "SELECT plate_no, site_name, rate, work_start_date, work_end_date, vehicle_type FROM vehicle_site_log",
     );
     const rateLogs = await pool.query(
       "SELECT plate_no, site_name, rate, work_start_date, work_end_date FROM vehicle_rate_log",
@@ -303,10 +303,12 @@ router.get("/vehicles", async (req, res) => {
 
         let uniqueSitesMap = new Map();
         validSLogs.forEach((s) => {
-          if (s.site_name) uniqueSitesMap.set(s.site_name, s.rate);
+          if (s.site_name) uniqueSitesMap.set(s.site_name, { rate: s.rate, vehicle_type: s.vehicle_type });
         });
 
-        uniqueSitesMap.forEach((sLogRate, siteName) => {
+        uniqueSitesMap.forEach((sLogData, siteName) => {
+          let sLogRate = sLogData.rate;
+          let sLogVType = sLogData.vehicle_type;
           let validRLogs = rLogs.filter((r) => {
             let matchesSite = !r.site_name || r.site_name.trim() === "" || r.site_name.trim().toUpperCase() === siteName.trim().toUpperCase();
             let st = r.work_start_date ? new Date(r.work_start_date) : new Date("2000-01-01");
@@ -324,18 +326,19 @@ router.get("/vehicles", async (req, res) => {
             finalRateVal = parseFloat(sLogRate) || parseFloat(tsItem.rate) || 0;
           }
 
-          pushVehicle(plate, tsItem, correctDriver, siteName, finalRateVal, correctOwner, correctOwnerMobile, correctVat);
+          pushVehicle(plate, tsItem, correctDriver, siteName, finalRateVal, correctOwner, correctOwnerMobile, correctVat, sLogVType);
         });
       } else {
         // All മോഡ്
         let defaultSite = (tsItem.site_name || "N/A").trim();
         let defaultRate = parseFloat(tsItem.rate) || 0;
-        pushVehicle(plate, tsItem, correctDriver, defaultSite, defaultRate, correctOwner, correctOwnerMobile, correctVat);
+        pushVehicle(plate, tsItem, correctDriver, defaultSite, defaultRate, correctOwner, correctOwnerMobile, correctVat, null);
       }
 
-      function pushVehicle(pPlate, pItem, pDriver, pSite, pRate, pOwner, pOwnerMobile, pVat) {
-        let vtype =
-          pItem.vehicle_type || pItem.vtype || pItem["vehicle type"] || pItem.vehicleType || "N/A";
+      function pushVehicle(pPlate, pItem, pDriver, pSite, pRate, pOwner, pOwnerMobile, pVat, pVType = null) {
+        let vtype = (pVType && pVType.trim() !== "" && pVType !== "N/A")
+          ? pVType.trim()
+          : (pItem.vehicle_type || pItem.vtype || pItem["vehicle type"] || pItem.vehicleType || "N/A");
         
         // ഡ്രൈവർ പേര് എംപ്റ്റി ആണെങ്കിൽ മാസ്റ്റർ ടേബിളിൽ ഉള്ളത് എടുക്കുന്നു
         let finalDriver = pDriver || pItem.driver_name || pItem.driver || "N/A";
@@ -685,7 +688,7 @@ router.get("/combined-bill", async (req, res) => {
     const [tsVehicleRes, rateLogRes, siteLogRes, ownerLogRes, plateLogRes] = await Promise.all([
       pool.query(`SELECT * FROM timesheet_vehicles WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) LIMIT 1`, [relatedPlates]),
       pool.query(`SELECT * FROM vehicle_rate_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [relatedPlates]),
-      pool.query(`SELECT * FROM vehicle_site_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [relatedPlates]),
+      pool.query(`SELECT id, plate_no, site_name, rate, work_start_date, work_end_date, vehicle_type FROM vehicle_site_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [relatedPlates]),
       pool.query(`SELECT * FROM vehicle_owner_log WHERE UPPER(TRIM(plate_no)) = ANY($1::text[]) ORDER BY id DESC`, [relatedPlates]),
       pool.query(`SELECT old_plate_no, new_plate_no, TO_CHAR(change_date, 'YYYY-MM-DD') as change_date FROM vehicle_plate_log WHERE UPPER(TRIM(old_plate_no)) = ANY($1::text[]) OR UPPER(TRIM(new_plate_no)) = ANY($1::text[]) ORDER BY change_date ASC`, [relatedPlates])
     ]);
@@ -791,8 +794,18 @@ router.get("/combined-bill", async (req, res) => {
         let targetSite = savedRow.site_name || vehicleInfo.site_name || "N/A";
         let resolvedCompany = savedRow.company || getCompanyFromSite(targetSite, vehicleInfo.company);
 
-        // 🟢 savedRow-ൽ vtype അല്ലെങ്കിൽ driver ഇല്ലെങ്കിൽ vehicleInfo-ൽ നിന്ന് എടുത്തു നൽകുന്നു
-        let rowVType = savedRow.vtype && savedRow.vtype !== "N/A" ? savedRow.vtype : (vehicleInfo.vehicle_type || "N/A");
+        // ആ മാസത്തെ സൈറ്റ് ലോഗിൽ പ്രത്യേക vehicle_type ഉണ്ടോ എന്ന് നോക്കുന്നു
+        let matchedMonthSiteLog = siteLogs.find((s) => {
+          let st = s.work_start_date ? new Date(s.work_start_date) : new Date("2000-01-01");
+          let ed = s.work_end_date ? new Date(s.work_end_date) : new Date("2099-01-01");
+          return st <= mEnd && ed >= mStart;
+        });
+        let fallbackSiteVType = (matchedMonthSiteLog?.vehicle_type && matchedMonthSiteLog.vehicle_type.trim() !== "" && matchedMonthSiteLog.vehicle_type !== "N/A")
+          ? matchedMonthSiteLog.vehicle_type.trim()
+          : (vehicleInfo.vehicle_type || "N/A");
+
+        // 🟢 savedRow-ൽ vtype അല്ലെങ്കിൽ driver ഇല്ലെങ്കിൽ സൈറ്റ് ലോഗിൽ നിന്നോ vehicleInfo-ൽ നിന്നോ നൽകുന്നു
+        let rowVType = savedRow.vtype && savedRow.vtype !== "N/A" ? savedRow.vtype : fallbackSiteVType;
         let rowDriver = savedRow.driver && savedRow.driver !== "N/A" ? savedRow.driver : (vehicleInfo.driver_name || "N/A");
 
         combinedRows.push({
