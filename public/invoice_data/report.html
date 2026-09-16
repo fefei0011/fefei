@@ -2312,10 +2312,11 @@
                 ts_nr: 0,
                 ts_ot: 0,
                 ts_31st_shift: 0,
-                rate: formatRateValue(s.rate),
+                rate: formatRateValue(finalRate),
                 driver_name: driverString,
                 field_co: s.field_co || "-",
                 site_co: s.site_co || "-",
+                vehicle_type: (s.vehicle_type && s.vehicle_type.trim() !== "" && s.vehicle_type !== "-") ? s.vehicle_type : vehicle_type,
               };
             }
           });
@@ -2692,7 +2693,7 @@
               payment_status: payment_status || "-",
               accounts_note: accounts_note || "-",
               driver_name: siteDataMap[sName].driver_name,
-              vehicle_type: vehicle_type,
+              vehicle_type: siteDataMap[sName].vehicle_type || vehicle_type,
               field_co: siteDataMap[sName].field_co,
               site_co: siteDataMap[sName].site_co,
               alt_nr: calc_ts_nr + (siteDataMap[sName].ts_31st_shift || 0),

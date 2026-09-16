@@ -864,6 +864,15 @@ async function rowAbout() {
 async function safeFetch(url, options) {
   try {
     const res = await fetch(url, options);
+    if (res.status === 401 || res.status === 403) {
+      localStorage.removeItem("timesheetToken");
+      localStorage.removeItem("timesheetUser");
+      const currentPage = encodeURIComponent(
+        window.location.pathname.split("/").pop() + window.location.search,
+      );
+      window.location.href = "index.html?redirect=" + currentPage;
+      return { success: false, message: "Session expired. Redirecting..." };
+    }
     if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
     return await res.json();
   } catch (e) {
@@ -924,10 +933,17 @@ async function initDB() {
           rLog = rates.find((r) => (r.plate_no || "").trim().toUpperCase() === (row.plate_no || "").trim().toUpperCase() && r.status === "Running");
         }
 
+        function formatCleanRate(val) {
+          if (val === null || val === undefined || val === "" || val === "null") return "";
+          let num = parseFloat(val);
+          if (isNaN(num)) return val;
+          return num % 1 !== 0 ? num.toFixed(2) : num.toString();
+        }
+
         if (rLog && rLog.rate) {
-          row.site_rate = rLog.rate;
+          row.site_rate = formatCleanRate(rLog.rate);
         } else {
-          row.site_rate = sLog && sLog.rate ? sLog.rate : row.rate || "";
+          row.site_rate = formatCleanRate(sLog && sLog.rate ? sLog.rate : row.rate || "");
         }
         row.site_old_veh =
           sLog && sLog.old_vehicle_no ? sLog.old_vehicle_no : "";
@@ -968,7 +984,11 @@ async function initDB() {
   } catch (err) {
     document.getElementById("errorBanner").style.display = "block";
     document.getElementById("errorBanner").innerText =
-      "Notice: Database sync failed or refreshing.";
+      "Notice: Database sync failed (" + (err.message || "Network Error") + "). Please refresh.";
+    const dbBody = document.getElementById("dbBody");
+    if (dbBody) {
+      dbBody.innerHTML = `<tr><td colspan="30" style="padding: 20px; text-align: center; color: #ef4444;">Failed to load database. <a href="javascript:location.reload()" style="color:#2563eb; text-decoration:underline;">Click to Retry</a></td></tr>`;
+    }
   }
 }
 
@@ -1777,6 +1797,7 @@ function clearSiteForm() {
   document.getElementById("slId").value = "";
   document.getElementById("slName").value = "";
   document.getElementById("slRate").value = "";
+  if (document.getElementById("slVehicleType")) document.getElementById("slVehicleType").value = "";
   document.getElementById("slFieldCo").value = "";
   document.getElementById("slSiteCo").value = "";
   document.getElementById("slOldVehicle").value = "";
@@ -1915,7 +1936,7 @@ async function fetchLogs(plate, type) {
             ? `<button class="btn-delete-icon" onclick="deleteLogEntry(event, 'site', ${s.id}, '${plate}')" title="Delete Log">&#x1F5D1;&#xFE0F;</button>`
             : "";
         let escapedReasonS = escapeHTML(s.reason || "").replace(/'/g, "\\'");
-        slHtml += `<tr style="cursor:pointer;" onclick="editSiteLog(${s.id}, '${escapeHTML(s.site_name)}', '${start}', '${end}', '${s.status}', '${escapeHTML(s.old_vehicle_no)}', '${escapeHTML(s.new_vehicle_no)}', '${escapeHTML(s.asset_code)}', '${escapeHTML(s.work_order_no)}', '${escapeHTML(s.rate)}', '${escapeHTML(s.field_co)}', '${escapeHTML(s.site_co)}', '${escapedReasonS}')">
+        slHtml += `<tr style="cursor:pointer;" onclick="editSiteLog(${s.id}, '${escapeHTML(s.site_name)}', '${start}', '${end}', '${s.status}', '${escapeHTML(s.old_vehicle_no)}', '${escapeHTML(s.new_vehicle_no)}', '${escapeHTML(s.asset_code)}', '${escapeHTML(s.work_order_no)}', '${escapeHTML(s.rate)}', '${escapeHTML(s.field_co)}', '${escapeHTML(s.site_co)}', '${escapedReasonS}', '${escapeHTML(s.vehicle_type || "")}')">
                 <td><span style="font-weight:600; color:#0d6efd;">${escapeHTML(s.site_name)}</span><br><span style="font-size:10px; color:#888;">Tap to edit &#x270E;</span></td>
                 <td><span style="font-weight:bold; color:#000000;">${escapeHTML(s.rate || "-")}</span></td>
                 <td><span style="font-weight:bold; color:#475569;">${escapeHTML(s.work_order_no || "-")}</span></td><td>${start}</td><td>${end}</td><td>${badge}</td>
@@ -1956,6 +1977,7 @@ async function fetchLogs(plate, type) {
           activeS.field_co,
           activeS.site_co,
           activeS.reason,
+          activeS.vehicle_type,
         );
       }
       else if (masterRow && masterRow.site_name) {
@@ -2176,8 +2198,11 @@ function editSiteLog(
   fieldCo,
   siteCo,
   reason,
+  vehicleType,
 ) {
   document.getElementById("slId").value = id;
+  if (document.getElementById("slVehicleType"))
+    document.getElementById("slVehicleType").value = vehicleType && vehicleType !== "null" ? vehicleType : "";
   document.getElementById("slName").value = name;
   document.getElementById("slRate").value = rate && rate !== "null" ? rate : "";
   document.getElementById("slFieldCo").value =
@@ -2229,6 +2254,9 @@ async function saveSiteLog() {
     new_vehicle_no: document.getElementById("slNewVehicle").value.toUpperCase(),
     reason: document.getElementById("slReason")
       ? document.getElementById("slReason").value
+      : "",
+    vehicle_type: document.getElementById("slVehicleType")
+      ? document.getElementById("slVehicleType").value.trim()
       : "",
   };
 

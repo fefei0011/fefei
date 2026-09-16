@@ -217,20 +217,25 @@
     </div>
 
     <script>
-      // 🟢 GET INTENDED REDIRECT URL FROM ADDRESS BAR
+      // 🟢 GET INTENDED REDIRECT URL FROM ADDRESS BAR OR REFERRER
       const urlParams = new URLSearchParams(window.location.search);
-      const redirectUrl = urlParams.get("redirect") || "Timesheet.html"; // Default page is Timesheet.html
+      let redirectUrl = urlParams.get("redirect");
+      if (!redirectUrl && document.referrer && !document.referrer.includes("index.html")) {
+        redirectUrl = document.referrer;
+      }
+      if (!redirectUrl) {
+        redirectUrl = "Timesheet.html";
+      }
 
-      // 🟢 AUTO REDIRECT TO INTENDED PAGE IF ALREADY LOGGED IN
-      window.onload = () => {
+      // 🟢 PREVENT BACK BUTTON ACCESS TO LOGIN IF ALREADY AUTHENTICATED
+      function checkAuthAndRedirect() {
         if (localStorage.getItem("timesheetToken") && localStorage.getItem("timesheetUser")) {
-          window.location.href = redirectUrl;
-        } else {
-          // Clear incomplete data to prevent redirect loops
-          localStorage.removeItem("timesheetToken");
-          localStorage.removeItem("timesheetUser");
+          window.location.replace(redirectUrl);
         }
-      };
+      }
+
+      window.addEventListener("pageshow", checkAuthAndRedirect);
+      window.addEventListener("DOMContentLoaded", checkAuthAndRedirect);
 
       function switchSection(id) {
         document.querySelectorAll(".section").forEach((sec) => {
@@ -274,8 +279,8 @@
           if (data.success) {
             localStorage.setItem("timesheetToken", data.token);
             localStorage.setItem("timesheetUser", JSON.stringify(data.user));
-            // 🟢 REDIRECT TO THE PAGE THEY CAME FROM, OR DASHBOARD
-            window.location.href = redirectUrl;
+            // 🟢 REDIRECT TO THE PAGE THEY CAME FROM, OR DASHBOARD (REPLACE HISTORY)
+            window.location.replace(redirectUrl);
           } else {
             msgDiv.innerText = data.message;
             msgDiv.style.color = "#dc3545";

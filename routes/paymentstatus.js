@@ -164,7 +164,7 @@ router.get("/master-report-data", async (req, res) => {
 
     const [vehicles, sites, drivers, timesheets, invoices, billing, owners, rates, plateChanges] = await Promise.all([
       pool.query("SELECT plate_no, owner_name, site_name, vehicle_type, vat FROM timesheet_vehicles"),
-      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co FROM vehicle_site_log"),
+      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co, vehicle_type FROM vehicle_site_log"),
       pool.query("SELECT plate_no, driver_name, work_start_date, work_end_date FROM vehicle_driver_log"),
       pool.query("SELECT plate_no, record_date, calc_time, bd FROM timesheet_daily_records WHERE month=$1 AND year=$2", [month, year]),
       pool.query("SELECT * FROM invoice_records WHERE month=$1", [fullMonth]),
@@ -246,7 +246,7 @@ router.post("/master-report-data-batch", async (req, res) => {
 
     const [vehicles, sites, drivers, timesheets, invoices, billing, owners, rates, plateChanges] = await Promise.all([
       pool.query("SELECT plate_no, owner_name, site_name, vehicle_type, vat FROM timesheet_vehicles"),
-      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co FROM vehicle_site_log"),
+      pool.query("SELECT plate_no, site_name, work_start_date, work_end_date, rate, field_co, site_co, vehicle_type FROM vehicle_site_log"),
       pool.query("SELECT plate_no, driver_name, work_start_date, work_end_date FROM vehicle_driver_log"),
       pool.query(
         `SELECT plate_no, record_date, calc_time, bd, month, year

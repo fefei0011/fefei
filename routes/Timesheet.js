@@ -573,7 +573,7 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
     );
 
     let selectCols =
-      "id, plate_no, site_name, rate, old_vehicle_no, new_vehicle_no, field_co, site_co, reason, TO_CHAR(work_start_date, 'YYYY-MM-DD') as start_date, TO_CHAR(work_end_date, 'YYYY-MM-DD') as end_date, status, replaced_by";
+      "id, plate_no, site_name, rate, old_vehicle_no, new_vehicle_no, field_co, site_co, reason, TO_CHAR(work_start_date, 'YYYY-MM-DD') as start_date, TO_CHAR(work_end_date, 'YYYY-MM-DD') as end_date, status, replaced_by, vehicle_type";
     if (siteColCheck.rows.length > 0) {
       selectCols += ", asset_code, work_order_no";
     }
@@ -820,6 +820,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       field_co,
       site_co,
       reason,
+      vehicle_type,
     } = req.body;
 
     let updateCols = [
@@ -834,6 +835,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       "field_co=$9",
       "site_co=$10",
       "reason=$11",
+      "vehicle_type=$12",
     ];
     let updateVals = [
       site_name,
@@ -847,6 +849,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       field_co || null,
       site_co || null,
       reason || null,
+      vehicle_type || null,
     ];
 
     let insertCols = [
@@ -862,6 +865,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       "field_co",
       "site_co",
       "reason",
+      "vehicle_type",
     ];
     let insertVals = [
       plate_no,
@@ -876,6 +880,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       field_co || null,
       site_co || null,
       reason || null,
+      vehicle_type || null,
     ];
 
     if (asset_code !== undefined) {
@@ -906,8 +911,8 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
     }
 
     if (status === "Running") {
-      let tsUpdates = ["site_name=$1", "rate=$2", "field_co=$3", "site_co=$4"];
-      let tsVals = [site_name, rate || null, field_co || null, site_co || null];
+      let tsUpdates = ["site_name=$1", "rate=$2", "field_co=$3", "site_co=$4", "vehicle_type=$5"];
+      let tsVals = [site_name, rate || null, field_co || null, site_co || null, vehicle_type || null];
 
       if (asset_code !== undefined) {
         tsUpdates.push(`asset_code=$${tsVals.length + 1}`);
@@ -1827,8 +1832,8 @@ router.post("/api/db/update-plate-no", verifyEditor, async (req, res) => {
     if (!old_plate_no || !new_plate_no)
       throw new Error("Missing plate numbers");
 
-    const oldPlate = old_plate_no.trim().toUpperCase();
-    const newPlate = new_plate_no.trim().toUpperCase();
+    const oldPlate = old_plate_no.replace(/\s+/g, ' ').trim().toUpperCase();
+    const newPlate = new_plate_no.replace(/\s+/g, ' ').trim().toUpperCase();
     const effectiveDate = change_date ? change_date : new Date().toISOString().split('T')[0];
     const username = req.user ? req.user.username : 'Editor';
 
