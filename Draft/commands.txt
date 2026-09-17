@@ -114,3 +114,38 @@ WHERE billing_month = 'February 2026'
   
 
 DELETE FROM billing_records WHERE id = 3412;
+
+
+
+
+
+ Plate no edit cheyyan sql il 
+
+ 
+BEGIN;
+
+-- 1. Master Vehicle Table
+UPDATE timesheet_vehicles SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+
+-- 2. Daily Grid Records
+UPDATE timesheet_daily_records SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+
+-- 3. All Logs
+UPDATE vehicle_driver_log SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+UPDATE vehicle_site_log SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+UPDATE vehicle_owner_log SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+UPDATE vehicle_rate_log SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+
+-- 4. Billing & Invoices
+UPDATE billing_records SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+UPDATE invoice_records SET plate_no = '6099 SLA' WHERE plate_no = '6099  SLA';
+
+-- 5. Plate Change History (Old & New columns)
+UPDATE vehicle_plate_log SET old_plate_no = '6099 SLA' WHERE old_plate_no = '6099  SLA';
+UPDATE vehicle_plate_log SET new_plate_no = '6099 SLA' WHERE new_plate_no = '6099  SLA';
+
+-- 6. Site Log Replacement Vehicle Columns
+UPDATE vehicle_site_log SET old_vehicle_no = '6099 SLA' WHERE old_vehicle_no = '6099  SLA';
+UPDATE vehicle_site_log SET new_vehicle_no = '6099 SLA' WHERE new_vehicle_no = '6099  SLA';
+
+COMMIT;
