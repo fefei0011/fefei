@@ -1055,6 +1055,7 @@ router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
           lock.timestamp = Date.now();
           lock.requestedBy = null;
           lock.requestTime = null;
+          return res.json({ success: true, newOwner: lock.username });
       } else if (action === "reject") {
           lock.requestedBy = "REJECTED"; // Signal to User B that request was rejected
           lock.requestTime = null;

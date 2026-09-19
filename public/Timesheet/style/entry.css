@@ -20,6 +20,8 @@ body {
   padding: 0;
   font-size: 13px;
   color: #333;
+  height: 100vh;
+  overflow: hidden; /* 🟢 Main page jump aavathe fixed aayi nilkkum */
 }
 
 .navbar {
@@ -199,26 +201,16 @@ textarea:focus {
   min-width: 0;
 }
 
-.table-responsive {
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  border-radius: 6px;
-
-  border: 1px solid rgba(255, 255, 255, 0.18);
-
-  background: white;
-}
-
 body.dark-mode .table-responsive {
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
   box-shadow: none;
 }
 
 table {
-  width: max-content;
+  width: 100%;
   border-collapse: collapse;
-  min-width: 900px;
+  min-width: 960px;
+  table-layout: fixed; /* 🟢 Pro look: columns thammil overlap aakilla */
 }
 
 th,
@@ -227,17 +219,45 @@ td {
   padding: 0;
   text-align: center;
   vertical-align: middle;
+  box-sizing: border-box;
 }
 
 th {
-  background: #1e293b;
-  color: white;
-  padding: 10px 5px;
-  font-weight: 500;
-  font-size: 12px;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 8px 4px;
+  font-weight: 600;
+  font-size: 11px;
   position: sticky;
   top: 0;
-  letter-spacing: 0.3px;
+  z-index: 2;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 🟢 Hide scrollbars completely across Chrome, Safari, Firefox & Edge */
+.right-sidebar,
+.table-responsive,
+.logsheet-sidebar,
+.logsheet-viewer {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+
+.right-sidebar::-webkit-scrollbar,
+.table-responsive::-webkit-scrollbar,
+.logsheet-sidebar::-webkit-scrollbar,
+.logsheet-viewer::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Opera */
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .row-friday {
@@ -279,25 +299,23 @@ td textarea:focus {
 }
 
 td input[type="checkbox"] {
-  transform: scale(1.3);
   cursor: pointer;
-  margin: 0;
+  margin: 0 auto;
+  display: block;
+  width: 15px;
+  height: 15px;
+  accent-color: #0284c7;
+}
+
+td input.grid-input[data-col="bd"] {
+  font-weight: 400;
+  letter-spacing: 0.5px;
 }
 
 .grid-readonly {
-  font-weight: 600;
+  font-weight: 400;
   color: #475569;
   pointer-events: none;
-}
-
-.right-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-  width: 320px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 70px;
 }
 
 .summary-card {
@@ -405,15 +423,17 @@ td input[type="checkbox"] {
 
 /* 🟢 Plate No Search ബോക്സ് dynamic ആയി ബാക്കിയുള്ള സ്ഥലത്തിനനുസരിച്ച് വികസിക്കുകയും ചുരുങ്ങുകയും ചെയ്യുന്നു */
 .input-plate {
-  flex: 1;
+  flex: 0 1 240px; /* 🟢 Wider screen-il athikam neelam pookilla */
   min-width: 140px;
+  max-width: 260px;
 }
 
 .autocomplete-container {
   position: relative;
   display: flex;
   gap: 8px;
-  width: 100%; /* 🟢 ഫിക്സഡ് 250px മാറ്റി 100% dynamic ആക്കി */
+  width: 100%;
+  max-width: 260px;
   z-index: 1005;
 }
 
@@ -1027,6 +1047,37 @@ body.dark-mode .logsheet-btn:hover {
   color: #fff;
 }
 
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 300px;
+  flex-shrink: 0;
+  height: calc(100vh - 145px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 50px; /* 🟢 താഴെ 50px ഗ്യാപ്പ് */
+  box-sizing: border-box;
+}
+
+.table-center-wrapper {
+  flex: 1;
+  height: calc(100vh - 145px);
+  overflow: hidden;
+}
+
+.table-responsive {
+  width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  padding-bottom: 50px; /* 🟢 31-ആം തീയതി ക്ലിയർ ആയി കാണാൻ 50px സ്പേസ് */
+  box-sizing: border-box;
+}
+
 .inline-logsheet-container {
   flex: 1;
   min-width: 350px;
@@ -1036,14 +1087,21 @@ body.dark-mode .logsheet-btn:hover {
   display: flex;
   flex-direction: column;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-  height: calc(100vh - 120px);
+  height: calc(100vh - 145px);
   order: 1;
   margin-top: 0 !important;
+  overflow: hidden;
+  padding-bottom: 50px; /* 🟢 Logsheet കൺട്രോളുകൾക്ക് അടിയിൽ 50px സ്പേസ് */
+  box-sizing: border-box;
+}
 
-  /* Sticky Scroll Fix */
-  position: sticky;
-  top: 15px;
-  align-self: flex-start;
+body.logsheet-open .right-sidebar {
+  order: -1;
+  width: 240px;
+  height: calc(100vh - 145px);
+  overflow-y: auto;
+  padding-bottom: 50px; /* 🟢 Logsheet തുറക്കുമ്പോഴും 50px സ്പേസ് നിലനിൽക്കും */
+  box-sizing: border-box;
 }
 
 body.dark-mode .inline-logsheet-container {
@@ -1059,6 +1117,8 @@ body.logsheet-open .main-content {
 body.logsheet-open .right-sidebar {
   order: -1; /* Summary ബോക്സുകളെ ഇടത്തേക്ക് മാറ്റുന്നു */
   width: 240px; /* Summary യുടെ വീതി പരമാവധി കുറക്കുന്നു */
+  max-height: calc(100vh - 130px);
+  overflow-y: auto;
 }
 
 body.logsheet-open .summary-card {
@@ -1081,15 +1141,17 @@ body.logsheet-open #tableCenterWrapper {
   overflow-x: auto;
 }
 
-/* 🟢 Shrink Remark Column when Logsheet is open */
-body.logsheet-open #gridTable col:nth-last-child(2) {
-  width: 50px !important;
+/* 🟢 Logsheet open aavumbol table compress aavaathe neat aayi scroll cheyyaam */
+body.logsheet-open #gridTable {
+  min-width: 960px;
 }
-body.logsheet-open #gridTable th:nth-last-child(2) {
-  width: 50px !important;
+body.logsheet-open #gridTable th,
+body.logsheet-open #gridTable td {
+  white-space: nowrap;
 }
-body.logsheet-open #gridTable th:last-child {
-  width: 50px !important; /* Modified By കോളം കൂടെ ചെറുതാക്കാൻ */
+body.logsheet-open #gridTable td input[data-col="bd"] {
+  min-width: 45px;
+  font-weight: 700;
 }
 
 /* 🟢 Style for the new Logsheet width drag handle */

@@ -378,6 +378,21 @@ async function triggerFetch() {
     await customAlert("Please enter a Plate No.", "Missing Information");
     return;
   }
+
+  // 🟢 FIX: പുതിയ പ്ലേറ്റ് ഫെച്ച് ചെയ്യുമ്പോൾ മുൻപത്തെ എല്ലാ ലോക്ക് സ്റ്റേറ്റുകളും പൂർണ്ണമായി റീസെറ്റ് ചെയ്യുന്നു
+  clearInterval(recordPollTimer);
+  recordPollTimer = null;
+  isReadOnlyMode = false;
+  amIWaitingForApproval = false;
+  incomingRequestActive = false;
+  
+  const btnReq = document.getElementById("btnRequestEdit");
+  if (btnReq) {
+    btnReq.style.display = "none";
+    btnReq.disabled = false;
+    btnReq.style.opacity = "1";
+  }
+
   loggedRowsTracker.clear();
   savePlateHistory(p);
 
