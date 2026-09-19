@@ -789,8 +789,33 @@ async function triggerFileRename() {
     });
     const data = await res.json();
     if (data.success) {
-      // Refresh logsheets
-      await openLogsheetViewer();
+      // 🟢 SILENT RENAME: ലിസ്റ്റോ വ്യൂവറോ റീലോഡ് ചെയ്യാതെ ആ ഫയലിന്റെ പേര് മാത്രം UI-ൽ അപ്ഡേറ്റ് ചെയ്യുന്നു
+      const newBaseName = data.newBaseName || (newName.trim() + currentExt);
+      const newFullPath = data.newPath || file.filename.replace(file.basename, newBaseName);
+
+      // 1. മെമ്മറിയിലെ ഫയൽ ഡാറ്റ അപ്ഡേറ്റ് ചെയ്യുന്നു
+      file.basename = newBaseName;
+      file.filename = newFullPath;
+
+      // 2. സൈഡ്‌ബാറിലെ ഫയൽ ടെക്സ്റ്റ് മാത്രം മാറ്റുന്നു
+      const fileRow = document.getElementById(`ls-file-${contextSelectedFileIndex}`);
+      if (fileRow) {
+        const spanEl = fileRow.querySelector("span");
+        if (spanEl) {
+          spanEl.innerText = newBaseName;
+          spanEl.title = newBaseName;
+        }
+      }
+
+      // 3. വിജയകരമായ കാര്യം ചെറിയൊരു ടോസ്റ്റ് ആയി കാണിക്കുന്നു
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Renamed silently! ✓",
+        showConfirmButton: false,
+        timer: 1800,
+      });
     } else {
       await customAlert(data.message || "Failed to rename file", "Error");
     }
