@@ -42,6 +42,7 @@ let isReadOnlyMode = false;
 let recordPollTimer = null;
 let incomingRequestActive = false;
 let amIWaitingForApproval = false;
+let editCountdownInterval = null; // 🟢 കൗണ്ട്ഡൗൺ ടൈമർ ട്രാക്ക് ചെയ്യാൻ
 
 // 🟢 NEW: Month Navigation Arrow Functions
 function prevMonth() {
@@ -394,6 +395,7 @@ async function triggerFetch() {
   }
 
   loggedRowsTracker.clear();
+  resetBellButton(); // 🟢 ബെൽ കൗണ്ട്ഡൗൺ റീസെറ്റ് ചെയ്യുന്നു
   savePlateHistory(p);
 
   const inlineLogsheet = document.getElementById("inlineLogsheet");
@@ -402,6 +404,7 @@ async function triggerFetch() {
   const m = document.getElementById("selMonth").value;
   const y = document.getElementById("selYear").value;
 
+  // 🟢 വേറെ പ്ലേറ്റിലേക്കോ മാസത്തിലേക്കോ മാറിയാൽ മാത്രം പഴയ ലോക്ക് റിലീസ് ചെയ്യുക
   if (currentLockedRecord && (currentLockedRecord.plate !== p || currentLockedRecord.month !== m || currentLockedRecord.year !== y)) {
     releaseLock();
   }
@@ -2224,7 +2227,8 @@ function startRecordPoll(p, m, y) {
           const isRejected = data.requestedBy === "REJECTED";
 
           if (!data.locked) {
-              if (isReadOnlyMode) claimLockSilently(p, m, y); 
+              // 🟢 FIX: Read-only മോഡിലുള്ള യൂസർ തനിയെ ലോക്ക് തിരിച്ചുപിടിക്കാൻ പാടില്ല!
+              // യൂസർ Fetch അടിച്ചാലോ ബെല്ലടിച്ചാലോ മാത്രമേ ആക്സസ് കിട്ടാവൂ.
               return;
           }
 
@@ -2232,6 +2236,7 @@ function startRecordPoll(p, m, y) {
               if (isReadOnlyMode) {
                   isReadOnlyMode = false;
                   amIWaitingForApproval = false;
+                  resetBellButton(); // 🟢 ടൈമർ നിർത്തി ബെൽ റീസെറ്റ് ചെയ്യുന്നു
                   clearInterval(recordPollTimer); 
                   
                   Swal.fire({
@@ -2272,11 +2277,8 @@ function startRecordPoll(p, m, y) {
                   if (isRejected) {
                       // 🟢 Request was REJECTED by Active User
                       amIWaitingForApproval = false;
+                      resetBellButton(); // 🟢 ടൈമർ നിർത്തി പഴയ ബെൽ തിരികെ വെക്കുന്നു
                       Swal.fire({ toast: true, position: "top-end", icon: "error", title: "Request Rejected by the active user.", showConfirmButton: false, timer: 4000 });
-                      
-                      const btn = document.getElementById("btnRequestEdit");
-                      btn.style.opacity = "1";
-                      btn.disabled = false;
                       
                       // Clear rejection state on backend
                       fetch("/timesheet/api/record-lock/clear-rejection", {
@@ -2302,12 +2304,24 @@ function startRecordPoll(p, m, y) {
   }, 5000); 
 }
 
+// 🟢 FIX: ബാക്ക്‌ഗ്രൗണ്ട് വഴി അറിയാതെ ലോക്ക് റീ-ക്ലെയിം ചെയ്യുന്നത് ഒഴിവാക്കി
 async function claimLockSilently(p, m, y) {
-  await fetch("/timesheet/api/record-lock/request", {
-      method: 'POST',
-      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({ plate: p, month: m, year: y })
-  });
+  // Disabled to prevent stealing lock back from active user
+  return;
+}
+
+// 🟢 ബെൽ ബട്ടൺ കൗണ്ട്ഡൗൺ നിർത്തി പഴയ ബെൽ ഐക്കൺ (🔔) ആക്കുന്ന ഫംഗ്ഷൻ
+function resetBellButton() {
+  if (editCountdownInterval) {
+    clearInterval(editCountdownInterval);
+    editCountdownInterval = null;
+  }
+  const btn = document.getElementById("btnRequestEdit");
+  if (btn) {
+    btn.innerText = "🔔";
+    btn.style.opacity = "1";
+    btn.disabled = false;
+  }
 }
 
 async function requestEditAccess() {
@@ -2316,7 +2330,7 @@ async function requestEditAccess() {
   const y = document.getElementById("selYear").value;
   
   const btn = document.getElementById("btnRequestEdit");
-  btn.style.opacity = "0.5";
+  btn.style.opacity = "0.7";
   btn.disabled = true;
 
   try {
@@ -2330,18 +2344,31 @@ async function requestEditAccess() {
           Swal.fire({ toast: true, position: "top-end", icon: "info", title: "Request sent. Waiting for approval...", showConfirmButton: false, timer: 3000 });
           amIWaitingForApproval = true;
           
-          // 🟢 ZERO DELAY FIX: Force local timer for exact 29 seconds!
-          setTimeout(() => {
-              if (amIWaitingForApproval) {
-                  forceClaimLock(p, m, y);
+          // 🟢 ബെല്ലിന് പകരം 29 സെക്കൻഡ് ലൈവ് കൗണ്ട്ഡൗൺ കാണിക്കുന്നു
+          let timeLeft = 29;
+          btn.innerText = `⏳ ${timeLeft}s`;
+
+          if (editCountdownInterval) clearInterval(editCountdownInterval);
+          editCountdownInterval = setInterval(() => {
+              timeLeft--;
+              if (timeLeft > 0) {
+                  btn.innerText = `⏳ ${timeLeft}s`;
+              } else {
+                  clearInterval(editCountdownInterval);
+                  editCountdownInterval = null;
+                  if (amIWaitingForApproval) {
+                      forceClaimLock(p, m, y);
+                  }
               }
-          }, 29000);
+          }, 1000);
+
       } else {
           customAlert(data.message, "Notice");
-          btn.style.opacity = "1";
-          btn.disabled = false;
+          resetBellButton();
       }
-  } catch(e) {}
+  } catch(e) {
+      resetBellButton();
+  }
 }
 
 function showTransferRequestPopup(requester, p, m, y) {

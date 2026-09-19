@@ -20,8 +20,15 @@ body {
   padding: 0;
   font-size: 13px;
   color: #333;
-  height: 100vh;
-  overflow: hidden; /* 🟢 Main page jump aavathe fixed aayi nilkkum */
+  min-height: 100vh;
+}
+
+/* 🟢 Wider screenil logsheet thurannu nilkkumbol maathram jump aavathe freeze cheyyunnu */
+@media (min-width: 1201px) {
+  body.logsheet-open {
+    height: 100vh;
+    overflow: hidden;
+  }
 }
 
 .navbar {
@@ -897,22 +904,27 @@ body.dark-mode .tsdb:hover {
 /* Mobile Overrides */
 @media (max-width: 1200px) {
   .main-content {
-    flex-direction: column-reverse;
-    align-items: center;
-  }
-  .right-sidebar {
-    width: 100%;
-    max-width: 800px;
-    position: static;
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .summary-card {
-    flex: 1;
-    min-width: 300px;
+    flex-direction: column; /* 🟢 Table munnil thanne varum, side-cards thazhekku povum */
+    align-items: stretch;
+    gap: 20px;
   }
   .table-center-wrapper {
     width: 100%;
+    overflow-x: auto;
+  }
+  .right-sidebar {
+    width: 100%;
+    max-width: 100%;
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 20px;
+  }
+  .summary-card {
+    flex: 1 1 280px;
+    min-width: 260px;
   }
 }
 
@@ -1053,29 +1065,42 @@ body.dark-mode .logsheet-btn:hover {
   gap: 15px;
   width: 300px;
   flex-shrink: 0;
-  height: calc(100vh - 145px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-bottom: 50px; /* 🟢 താഴെ 50px ഗ്യാപ്പ് */
   box-sizing: border-box;
 }
 
 .table-center-wrapper {
   flex: 1;
-  height: calc(100vh - 145px);
-  overflow: hidden;
+  min-width: 0;
 }
 
 .table-responsive {
   width: 100%;
-  height: 100%;
   overflow-x: auto;
-  overflow-y: auto;
   border-radius: 6px;
   border: 1px solid #e2e8f0;
   background: white;
-  padding-bottom: 50px; /* 🟢 31-ആം തീയതി ക്ലിയർ ആയി കാണാൻ 50px സ്പേസ് */
   box-sizing: border-box;
+}
+
+/* 🟢 Wider screens-il maathram 3 columns fixed height aayirikkum */
+@media (min-width: 1201px) {
+  body.logsheet-open .right-sidebar {
+    height: calc(100vh - 145px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 50px;
+  }
+
+  body.logsheet-open .table-center-wrapper {
+    height: calc(100vh - 145px);
+    overflow: hidden;
+  }
+
+  body.logsheet-open .table-responsive {
+    height: 100%;
+    overflow-y: auto;
+    padding-bottom: 50px;
+  }
 }
 
 .inline-logsheet-container {
@@ -1151,7 +1176,7 @@ body.logsheet-open #gridTable td {
 }
 body.logsheet-open #gridTable td input[data-col="bd"] {
   min-width: 45px;
-  font-weight: 700;
+  font-weight: 400;
 }
 
 /* 🟢 Style for the new Logsheet width drag handle */
