@@ -113,14 +113,15 @@ body.logsheet-open .right-sidebar {
   display: flex;
   gap: 10px;
   align-items: flex-end;
-  flex-shrink: 0;
+  flex: 1; /* 🟢 ഇടത്തെ റോ ബാക്കിയുള്ള സ്ഥലത്തേക്ക് വികസിക്കും */
+  min-width: 0; /* 🟢 Flexbox ഉള്ളിൽ ഇൻപുട്ടുകൾക്ക് ചുരുങ്ങാൻ അനുവാദം നൽകുന്നു */
 }
 
 .nav-buttons-row {
   display: flex;
   gap: 6px;
   align-items: flex-end;
-  flex-shrink: 0;
+  flex-shrink: 0; /* 🟢 ബട്ടണുകൾ ഒരിക്കലും ഞെരിഞ്ഞു പോകില്ല */
   margin-left: auto; /* വലതു വശത്തേക്ക് ഒതുങ്ങി നിൽക്കാൻ */
 }
 
@@ -392,11 +393,27 @@ td input[type="checkbox"] {
   overflow: visible !important; /* 🟢 Card കണ്ടെയ്‌നറും visible ആക്കുന്നു */
 }
 
+/* 🟢 Year ഇൻപുട്ട് അനാവശ്യമായി സ്ഥലം എടുക്കാതെ കോംപാക്റ്റ് ആക്കുന്നു */
+.select-year {
+  width: 85px;
+  flex-shrink: 0;
+}
+
+.select-year input {
+  text-align: center;
+}
+
+/* 🟢 Plate No Search ബോക്സ് dynamic ആയി ബാക്കിയുള്ള സ്ഥലത്തിനനുസരിച്ച് വികസിക്കുകയും ചുരുങ്ങുകയും ചെയ്യുന്നു */
+.input-plate {
+  flex: 1;
+  min-width: 140px;
+}
+
 .autocomplete-container {
   position: relative;
   display: flex;
   gap: 8px;
-  width: 250px;
+  width: 100%; /* 🟢 ഫിക്സഡ് 250px മാറ്റി 100% dynamic ആക്കി */
   z-index: 1005;
 }
 

@@ -53,6 +53,7 @@ const monthly_summary = require("./routes/monthly_list_summary");
 const { checkAndSendOwnEqAlerts } = require("./services/ownEqExpiryAlert");
 const nonVatRouter = require("./routes/non_vat_bill_tracker");
 const driverBillingRoutes = require("./routes/driver_billing");
+const logsheetToolsRoutes = require("./routes/logsheet_tools");
 
 
 
@@ -94,6 +95,7 @@ app.use("/api/payroll", payrollRouter);
 app.use("/api/monthly-summary", monthly_summary);
 app.use("/timesheet/api/non-vat-tracking", nonVatRouter);
 app.use("/driver-billing", driverBillingRoutes);
+app.use("/timesheet/api/logsheets", logsheetToolsRoutes);
 
 
 

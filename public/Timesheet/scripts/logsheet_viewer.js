@@ -238,6 +238,11 @@ function renderFileList() {
     `;
 
     div.onclick = () => selectFileIndex(index);
+    // 🟢 Right-click context menu event
+    div.oncontextmenu = (e) => {
+      e.preventDefault();
+      openContextMenuForFile(e, index);
+    };
     sidebar.appendChild(div);
   });
 }
@@ -339,6 +344,7 @@ function loadViewerContent(filePath, mimeType, token) {
               <button class="zoom-btn" onclick="resetZoomRotate()" title="Reset">🔄</button>
               <button class="zoom-btn" onclick="adjustZoom(0.2)" title="Zoom In">➕</button>
               <button class="zoom-btn" onclick="rotateImage()" title="Rotate" style="color:#f59e0b;">⟳</button>
+              <button class="zoom-btn" id="btnSaveRotation" onclick="saveCurrentRotation()" title="Save Rotation Permanently to File" disabled style="color:#10b981; font-weight:bold; margin-left: 4px; opacity: 0.4; cursor: not-allowed;">💾</button>
             </div>
           `;
 
@@ -366,6 +372,7 @@ function loadViewerContent(filePath, mimeType, token) {
 
           applyTransform();
           attachMouseEvents();
+          updateSaveRotationBtnState(); // 🟢 Initial load-il save button inactive aakkan
         } catch (pdfErr) {
           viewer.innerHTML = `<div style="color:#ef4444; font-weight:bold; padding:20px; text-align:center;">Failed to render PDF preview.</div>`;
         }
@@ -383,10 +390,12 @@ function loadViewerContent(filePath, mimeType, token) {
             <button class="zoom-btn" onclick="resetZoomRotate()" title="Reset">🔄</button>
             <button class="zoom-btn" onclick="adjustZoom(0.2)" title="Zoom In">➕</button>
             <button class="zoom-btn" onclick="rotateImage()" title="Rotate" style="color:#f59e0b;">⟳</button>
+            <button class="zoom-btn" id="btnSaveRotation" onclick="saveCurrentRotation()" title="Save Rotation Permanently to File" style="color:#10b981; font-weight:bold; margin-left: 4px;">💾</button>
           </div>
         `;
         applyTransform();
         attachMouseEvents();
+        updateSaveRotationBtnState(); // 🟢 Initial load-il save button inactive aakkan
       }
     })
     .catch((err) => {
@@ -406,6 +415,7 @@ function rotateImage() {
   currentRotation += 90;
   if (currentRotation >= 360) currentRotation = 0;
   applyTransform();
+  updateSaveRotationBtnState(); // 🟢 റൊട്ടേഷൻ അനുസരിച്ച് ബട്ടൺ സ്റ്റേറ്റ് അപ്ഡേറ്റ് ചെയ്യുന്നു
 }
 
 function resetZoomRotate() {
@@ -414,6 +424,28 @@ function resetZoomRotate() {
   posX = 0; // 🟢 Reset position X
   posY = 0; // 🟢 Reset position Y
   applyTransform();
+  updateSaveRotationBtnState(); // 🟢 റീസെറ്റ് ചെയ്യുമ്പോൾ ബട്ടൺ ഇൻആക്ടീവ് ആക്കുന്നു
+}
+
+// 🟢 NEW: റൊട്ടേഷൻ ഉണ്ടെങ്കിൽ മാത്രം ബട്ടൺ ആക്ടീവ് ആക്കുന്ന ഫംഗ്ഷൻ
+function updateSaveRotationBtnState() {
+  const btn = document.getElementById("btnSaveRotation");
+  if (!btn) return;
+  
+  // 🟢 0-o allenkil 360-nte multiples-o (original position) aanengil strictly inactive
+  const isRotated = (currentRotation % 360) !== 0;
+
+  if (isRotated) {
+    btn.disabled = false;
+    btn.style.opacity = "1";
+    btn.style.cursor = "pointer";
+    btn.style.pointerEvents = "auto";
+  } else {
+    btn.disabled = true;
+    btn.style.opacity = "0.3";
+    btn.style.cursor = "not-allowed";
+    btn.style.pointerEvents = "none";
+  }
 }
 
 function applyTransform() {
@@ -696,5 +728,217 @@ async function downloadCurrentImage() {
   } finally {
     btn.disabled = false;
     btn.innerText = "⬇ Current";
+  }
+}
+
+
+// ==========================================
+// 🟢 CONTEXT MENU & LOGSHEET TOOLS LOGIC
+// ==========================================
+let contextSelectedFileIndex = -1;
+
+function openContextMenuForFile(e, index) {
+  contextSelectedFileIndex = index;
+  const menu = document.getElementById("lsContextMenu");
+  const extractBtn = document.getElementById("ctxExtractPdfBtn");
+  if (!menu) return;
+
+  const file = logsheetFiles[index];
+  const isPdf = file && (file.mime.includes("pdf") || file.basename.toLowerCase().endsWith(".pdf"));
+
+  if (isPdf) {
+    extractBtn.style.display = "flex";
+  } else {
+    extractBtn.style.display = "none";
+  }
+
+  menu.style.left = `${e.clientX}px`;
+  menu.style.top = `${e.clientY}px`;
+  menu.style.display = "block";
+}
+
+// Close Context menu on outside click
+document.addEventListener("click", () => {
+  const menu = document.getElementById("lsContextMenu");
+  if (menu) menu.style.display = "none";
+});
+
+// 🟢 1. TRIGGER RENAME
+async function triggerFileRename() {
+  const menu = document.getElementById("lsContextMenu");
+  if (menu) menu.style.display = "none";
+
+  if (contextSelectedFileIndex === -1 || !logsheetFiles[contextSelectedFileIndex]) return;
+  const file = logsheetFiles[contextSelectedFileIndex];
+
+  const currentExt = file.basename.substring(file.basename.lastIndexOf("."));
+  const baseWithoutExt = file.basename.substring(0, file.basename.lastIndexOf("."));
+
+  const newName = await customPrompt(`Rename file "${file.basename}":`, false, "Rename File");
+  if (!newName || newName.trim() === "" || newName.trim() === baseWithoutExt) return;
+
+  try {
+    const activeToken = localStorage.getItem("timesheetToken");
+    const res = await fetch("/timesheet/api/logsheets/rename-file", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + activeToken,
+      },
+      body: JSON.stringify({ oldPath: file.filename, newName: newName.trim() }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      // Refresh logsheets
+      await openLogsheetViewer();
+    } else {
+      await customAlert(data.message || "Failed to rename file", "Error");
+    }
+  } catch (err) {
+    await customAlert("Network error while renaming", "Error");
+  }
+}
+
+// 🟢 2. TRIGGER EXTRACT PDF TO IMAGES
+async function triggerExtractPdf() {
+  const menu = document.getElementById("lsContextMenu");
+  if (menu) menu.style.display = "none";
+
+  if (contextSelectedFileIndex === -1 || !logsheetFiles[contextSelectedFileIndex]) return;
+  const file = logsheetFiles[contextSelectedFileIndex];
+
+  // SweetAlert confirmation
+  const confirmResult = await Swal.fire({
+    title: "Extract Images?",
+    html: `Extract all pages of <b>${file.basename}</b> as high-quality images?<br><br><small style="color:#64748b;">The original PDF will be moved safely to the <b>Temp/</b> folder.</small>`,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonColor: "#0284c7",
+    cancelButtonColor: "#64748b",
+    confirmButtonText: "Yes, Extract",
+  });
+
+  if (!confirmResult.isConfirmed) return;
+
+  Swal.fire({
+    title: "Extracting Images...",
+    text: "Extracting original quality images without loss. Please wait.",
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    },
+  });
+
+  try {
+    const activeToken = localStorage.getItem("timesheetToken");
+    const res = await fetch("/timesheet/api/logsheets/extract-pdf", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + activeToken,
+      },
+      body: JSON.stringify({ filePath: file.filename }),
+    });
+    const data = await res.json();
+    Swal.close();
+
+    if (data.success) {
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: data.message,
+        showConfirmButton: false,
+        timer: 3000,
+      });
+      // Refresh list
+      await openLogsheetViewer();
+    } else {
+      await customAlert(data.message || "Failed to extract images", "Error");
+    }
+  } catch (err) {
+    Swal.close();
+    await customAlert("Connection failed during extraction", "Error");
+  }
+}
+
+// 🟢 3. SAVE CURRENT ROTATION PERMANENTLY
+// 🟢 3. SAVE CURRENT ROTATION SILENTLY (Zero Page Reload)
+async function saveCurrentRotation() {
+  if (currentFileIndex === -1 || !logsheetFiles[currentFileIndex]) return;
+  const file = logsheetFiles[currentFileIndex];
+
+  // റൊട്ടേഷൻ ചെയ്തിട്ടില്ലെങ്കിൽ സേവ് ചെയ്യേണ്ടതില്ല
+  if (currentRotation === 0) {
+    Swal.fire({ 
+      toast: true, 
+      position: "top-end", 
+      icon: "info", 
+      title: "Rotate the image (⟳) before saving.", 
+      showConfirmButton: false, 
+      timer: 2000 
+    });
+    return;
+  }
+
+  const btn = document.getElementById("btnSaveRotation");
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳";
+  }
+
+  try {
+    const activeToken = localStorage.getItem("timesheetToken");
+    const res = await fetch("/timesheet/api/logsheets/rotate-file", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + activeToken,
+      },
+      body: JSON.stringify({ filePath: file.filename, rotation: currentRotation }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // റൊട്ടേഷൻ ഡിഗ്രി പൂജ്യമാക്കുന്നു
+      currentRotation = 0;
+      applyTransform();
+      updateSaveRotationBtnState(); // 🟢 സേവ് ചെയ്ത ശേഷം ബട്ടൺ വീണ്ടും ഇൻആക്ടീവ് ആക്കുന്നു
+
+      // 🟢 SILENT RELOAD: പേജോ ലിസ്റ്റോ റീലോഡ് ചെയ്യാതെ നിലവിലെ ചിത്രം മാത്രം റീ-റെൻഡർ ചെയ്യുന്നു
+      const zoomContent = document.getElementById("zoomContent");
+      const img = zoomContent ? zoomContent.querySelector("img") : null;
+      if (img) {
+        // കാഷെ ബൈപാസ് ചെയ്ത് പുതിയ ഇമേജ് കൊണ്ടുവരുന്നു
+        const activeToken = localStorage.getItem("timesheetToken");
+        const freshRes = await fetch(`/timesheet/api/logsheets/file?path=${encodeURIComponent(file.filename)}&_t=${Date.now()}`, {
+          headers: { Authorization: "Bearer " + activeToken }
+        });
+        const freshBlob = await freshRes.blob();
+        img.src = URL.createObjectURL(freshBlob);
+      } else {
+        // PDF ആണെങ്കിൽ ഉള്ളടക്കം മാത്രം സൈലന്റ് ആയി റീലോഡ് ചെയ്യുന്നു
+        loadViewerContent(file.filename, file.mime, activeToken);
+      }
+
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Saved silently! ✓",
+        showConfirmButton: false,
+        timer: 1800,
+      });
+    } else {
+      await customAlert(data.message || "Failed to save rotation", "Error");
+    }
+  } catch (err) {
+    console.error("Save Rotation Error:", err);
+    await customAlert("Network error while saving rotation", "Error");
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerText = "💾";
+    }
   }
 }

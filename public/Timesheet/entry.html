@@ -668,6 +668,16 @@
       </div>
     </div>
 
+    <!-- 🟢 Custom Right Click Context Menu for Logsheet Files -->
+    <div id="lsContextMenu" style="display: none; position: fixed; z-index: 4000; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); min-width: 170px; overflow: hidden; padding: 4px 0; font-family: 'Inter', sans-serif;">
+      <div id="ctxRenameBtn" style="padding: 8px 14px; font-size: 13px; font-weight: 600; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 8px;" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='transparent'" onclick="triggerFileRename()">
+        ✏️ Rename
+      </div>
+      <div id="ctxExtractPdfBtn" style="display: none; padding: 8px 14px; font-size: 13px; font-weight: 600; color: #0284c7; cursor: pointer; border-top: 1px dashed #e2e8f0; display: flex; align-items: center; gap: 8px;" onmouseover="this.style.background='#f0f9ff'" onmouseout="this.style.background='transparent'" onclick="triggerExtractPdf()">
+        📑 Extract as Images
+      </div>
+    </div>
+
     <script src="scripts/entry.js"></script>
     <script src="scripts/logsheet_viewer.js"></script>
   </body>
