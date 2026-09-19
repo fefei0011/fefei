@@ -641,6 +641,80 @@ async function triggerFetch() {
 }
 
 // 🟢 NEW: Site Log Details Card അപ്ഡേറ്റ് ചെയ്യുന്ന ഹെൽപ്പർ ഫംഗ്ഷൻ (Old / New Vehicle സഹിതം)
+// 🟢 NEW: ഒന്നിലധികം സൈറ്റുകൾ ഉള്ളപ്പോൾ നിർദ്ദിഷ്ട സൈറ്റിന്റെ മണിക്കൂറുകൾ മാത്രം കണക്കാക്കുന്നു
+function calculateHoursForSite(targetSiteLog) {
+  const siteHoursBlock = document.getElementById("siteHoursBlock");
+  if (!siteHoursBlock) return;
+
+  // ഒരു സൈറ്റ് മാത്രമാണെങ്കിൽ ഈ ബ്ലോക്ക് കാണിക്കേണ്ടതില്ല
+  if (!window.currentActiveSitesList || window.currentActiveSitesList.length <= 1 || !targetSiteLog) {
+    siteHoursBlock.style.display = "none";
+    return;
+  }
+
+  const monthStr = document.getElementById("selMonth").value;
+  const year = parseInt(document.getElementById("selYear").value);
+  const mIdx = months.indexOf(monthStr);
+  const days = getDaysInMonth(monthStr, year);
+
+  let stDate = targetSiteLog.work_start_date ? new Date(targetSiteLog.work_start_date) : new Date(year, mIdx, 1);
+  stDate.setHours(0, 0, 0, 0);
+  let edDate = targetSiteLog.work_end_date ? new Date(targetSiteLog.work_end_date) : new Date(year, mIdx + 1, 0);
+  edDate.setHours(23, 59, 59, 999);
+
+  let siteNormal = 0, siteOT = 0;
+
+  for (let i = 1; i <= days; i++) {
+    let curDate = new Date(year, mIdx, i);
+    curDate.setHours(12, 0, 0, 0);
+
+    // സൈറ്റ് ആക്ടീവ് ആയ തീയതിക്കുള്ളിൽ ആണോ എന്ന് നോക്കുന്നു
+    if (curDate >= stDate && curDate <= edDate) {
+      let tm = parseFloat(document.getElementById(`time_${i}`)?.value) || 0;
+      let bd = document.querySelector(`.grid-input[data-row="${i}"][data-col="bd"]`)?.value.trim().toUpperCase() || "";
+      let dayName = getDayName(i, monthStr, year);
+
+      let formattedDateForSum = new Date(year, mIdx, i).toLocaleDateString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric"
+      }).replace(/ /g, " ");
+
+      let targetSiteName = (targetSiteLog.site_name || "").trim().toUpperCase();
+      let sumOtRule = specialRulesCache.find(r =>
+        r.is_active && r.rule_type === "FULL_OT" &&
+        (r.sites.includes("ALL") || r.sites.includes(targetSiteName)) &&
+        r.dates.includes(formattedDateForSum)
+      );
+
+      let isFullOT = dayName === "Fri" || i === 31 || !!sumOtRule;
+      let nr = 0, ot = 0;
+
+      if (bd === "ID" || bd === "NP") {
+        if (isFullOT) ot = 10; else nr = 10;
+      } else if (["BD", "NW", "NS", "NR", "H", "AB", "DC", "SC", "R", "WS", "RE", "FRI", "Fri"].includes(bd)) {
+        // No hours
+      } else if (tm > 0) {
+        if (isFullOT) {
+          ot = tm;
+        } else {
+          if (tm > 10) {
+            nr = 10;
+            ot = tm - 10;
+          } else {
+            nr = tm;
+          }
+        }
+      }
+      siteNormal += nr;
+      siteOT += ot;
+    }
+  }
+
+  document.getElementById("dispSiteNR").innerText = siteNormal;
+  document.getElementById("dispSiteOT").innerText = siteOT;
+  document.getElementById("dispSiteTot").innerText = siteNormal + siteOT;
+  siteHoursBlock.style.display = "block";
+}
+
 function updateSiteLogDetailsCard(targetSiteLog) {
   const vMaster = window.currentVehicleMasterObj;
   const oldVehRow = document.getElementById("oldVehRow");
@@ -655,6 +729,8 @@ function updateSiteLogDetailsCard(targetSiteLog) {
     document.getElementById("dispWorkOrder").innerText = vMaster ? vMaster.wrk_order_no || "N/A" : "N/A";
     if (oldVehRow) oldVehRow.style.display = "none";
     if (newVehRow) newVehRow.style.display = "none";
+    const siteHoursBlock = document.getElementById("siteHoursBlock");
+    if (siteHoursBlock) siteHoursBlock.style.display = "none";
     return;
   }
 
@@ -683,6 +759,9 @@ function updateSiteLogDetailsCard(targetSiteLog) {
   } else {
     if (newVehRow) newVehRow.style.display = "none";
   }
+
+  // 🟢 Multi-site ഉണ്ടെങ്കിൽ നിർദ്ദിഷ്ട സൈറ്റിന്റെ മണിക്കൂറുകൾ അപ്ഡേറ്റ് ചെയ്യുന്നു
+  calculateHoursForSite(targetSiteLog);
 }
 
 // 🟢 Invoice Site ഡ്രോപ്പ്ഡൗൺ മാറുമ്പോൾ Invoice ഫോമും ഒപ്പം Site Log Details കാർഡും അപ്ഡേറ്റ് ആകുന്നു
@@ -863,6 +942,11 @@ function renderGrid(
   }
   attachGridEvents();
   updateSummaryBox();
+
+  // 🟢 FIX: Grid table render aayi kazhinja shesham Site Summary recalculate cheyyunnu
+  if (typeof loadInvoiceForSelectedSite === "function") {
+    loadInvoiceForSelectedSite();
+  }
 }
 
 function updateSummaryBox() {
@@ -960,6 +1044,15 @@ function updateSummaryBox() {
   let mileage = "0.00";
   if (tFuel > 0) mileage = (tDist / tFuel).toFixed(2);
   document.getElementById("sumMileage").innerText = mileage;
+
+  // 🟢 FIX: Main summary update aavumbol Site Summary-yum auto refresh aakunnu
+  const curSite = document.getElementById("invSiteSelect")?.value;
+  if (curSite && window.currentActiveSitesList && window.currentActiveSitesList.length > 0) {
+    const matchedLog = window.currentActiveSitesList.find(s => s.site_name === curSite) || window.currentActiveSitesList[0];
+    if (typeof calculateHoursForSite === "function") {
+      calculateHoursForSite(matchedLog);
+    }
+  }
 }
 
 function attachGridEvents() {
@@ -1601,10 +1694,25 @@ function toggleUserMenu(e) {
   const menu = document.getElementById("userDropdownMenu");
   menu.style.display = menu.style.display === "flex" ? "none" : "flex";
 }
+
+// 🟢 NEW: Options dropdown menu toggle function
+function toggleOptionsMenu(e) {
+  e.stopPropagation();
+  const menu = document.getElementById("optionsDropdownMenu");
+  if (menu) {
+    menu.style.display = menu.style.display === "flex" ? "none" : "flex";
+  }
+}
+
 document.addEventListener("click", function (e) {
   if (!e.target.closest(".user-profile-container")) {
     const menu = document.getElementById("userDropdownMenu");
     if (menu) menu.style.display = "none";
+  }
+  // 🟢 NEW: Options menu purathu click cheyyumbol close aavunnu
+  if (!e.target.closest(".options-dropdown-container")) {
+    const optMenu = document.getElementById("optionsDropdownMenu");
+    if (optMenu) optMenu.style.display = "none";
   }
   // 🟢 പുറത്ത് ക്ലിക്ക് ചെയ്യുമ്പോൾ suggestions ക്ലോസ് ആകാൻ
   if (!e.target.closest(".autocomplete-container")) {

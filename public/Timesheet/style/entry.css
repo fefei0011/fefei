@@ -1389,3 +1389,79 @@ body.dark-mode .month-nav-btn:hover {
   100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
 }
 
+/* 🟢 Nav Buttons Layout & Responsive Options Dropdown */
+.wide-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.options-dropdown-container {
+  display: none;
+  position: relative;
+}
+
+.btn-options-dropdown {
+  background: #f8fafc;
+  border: 1.5px solid #64748b;
+  color: #334155;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s;
+  height: 34px;
+  box-sizing: border-box;
+}
+
+.btn-options-dropdown:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.options-context-menu {
+  position: absolute;
+  top: 105%;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  z-index: 1000;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.options-context-menu a {
+  padding: 8px 14px;
+  text-decoration: none;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.options-context-menu a:hover {
+  background: #f1f5f9;
+  color: #0284c7;
+}
+
+/* 🟢 Responsive trigger: Screen cheruthaakumbool (less than 1400px) buttons hide aayi dropdown varum */
+@media (max-width: 1400px) {
+  .wide-nav-buttons {
+    display: none !important;
+  }
+  .options-dropdown-container {
+    display: inline-block !important;
+  }
+}

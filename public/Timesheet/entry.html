@@ -134,10 +134,29 @@
             <!-- 🟢 Bell icon & Lock icon adjusted for compact single row display -->
             <button id="btnRequestEdit" class="req-edit-btn" style="display:none; padding: 6px 10px; font-size: 14px; margin: 0; line-height: 1;" title="Request Edit Access" onclick="requestEditAccess()">🔔</button>     
             <button id="btnPeriodLock" class="req-edit-btn" style="display:none; padding: 6px 10px; font-size: 14px; margin: 0; line-height: 1; background-color: #f59e0b; color: white; border: none; border-radius: 6px; cursor: pointer;" title="Period Locked - Click to Unlock" onclick="openPeriodUnlockModal()">🔒</button>
-            <button class="pendingl"><a href="blank.html">Pending</a></button>
-            <button class="tsm"><a href="Dashboard.html">Timesheet</a></button>
-            <button class="tsm"><a href="view.html">Ts Card</a></button>
-            <button class="tsdb"><a href="./db.html">T S DB</a></button>
+
+            <!-- 🟢 Wide screenil maathram kaanunna direct buttons -->
+            <div class="wide-nav-buttons">
+              <button class="pendingl"><a href="blank.html">Pending</a></button>
+              <button class="tsm"><a href="Dashboard.html">Timesheet</a></button>
+              <button class="tsm"><a href="view.html">Ts Card</a></button>
+              <button class="tsdb"><a href="./db.html">T S DB</a></button>
+            </div>
+
+            <!-- 🟢 Screen cheruthaakumbool kaanunna Options dropdown button -->
+            <div class="options-dropdown-container" id="optionsDropdownContainer">
+              <button type="button" class="btn-options-dropdown" onclick="toggleOptionsMenu(event)">
+                ⚙️ Options ▾
+              </button>
+              <div id="optionsDropdownMenu" class="options-context-menu" style="display: none;">
+                <a href="blank.html">📋 Pending</a>
+                <a href="Dashboard.html">📊 Timesheet</a>
+                <a href="view.html">💳 Ts Card</a>
+                <a href="./db.html">🗄️ T S DB</a>
+              </div>
+            </div>
+
+            <!-- 🟢 Logsheet button eppozhum visible aayirikkum -->
             <button class="logsheet-btn" onclick="openLogsheetViewer()">
               📁 Logsheet
             </button>
@@ -384,6 +403,20 @@
                 <span class="detail-lbl" style="width: 80px">Work End</span
                 ><span class="detail-sep">::</span
                 ><span class="detail-val" id="dispSiteEnd">N/A</span>
+              </div>
+              <div id="siteHoursBlock" style="display: none; margin-top: 10px; border-top: 1px dashed #cbd5e1; padding-top: 8px;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px;">
+                  SITE SUMMARY
+                </div>
+                <div class="summary-item">
+                  Normal Time: <span class="summary-value val-normal" id="dispSiteNR">0</span>
+                </div>
+                <div class="summary-item">
+                  OT Hours: <span class="summary-value val-ot" id="dispSiteOT">0</span>
+                </div>
+                <div class="summary-item" style="border-top: 1px dashed #cbd5e1; padding-top: 4px; margin-top: 4px; font-weight: 700;">
+                  Total Time: <span class="summary-value" id="dispSiteTot">0</span>
+                </div>
               </div>
               <div
                 class="detail-row"

@@ -205,10 +205,22 @@ async function openLogsheetViewer(passedPlate = "") {
   }
 }
 
-// 2. Render Sidebar List (Updated with Checkboxes, File Size & 0B check)
+// 2. Render Sidebar List (Updated with Checkboxes, File Size & 0B check, with Select All)
 function renderFileList() {
   const sidebar = document.getElementById("logsheetFileList");
   sidebar.innerHTML = "";
+
+  // 🟢 Select All Header ചേർക്കുന്നു
+  if (logsheetFiles.length > 0) {
+    const selectAllDiv = document.createElement("div");
+    selectAllDiv.style.cssText = "padding: 8px 12px; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: bold; color: #334155; position: sticky; top: 0; z-index: 5;";
+    selectAllDiv.innerHTML = `
+      <input type="checkbox" id="selectAllLogsheets" style="cursor: pointer; width: 15px; height: 15px;" onchange="toggleSelectAllLogsheets(this.checked)" />
+      <label for="selectAllLogsheets" style="cursor: pointer; margin: 0; user-select: none;">Select All</label>
+    `;
+    sidebar.appendChild(selectAllDiv);
+  }
+
   logsheetFiles.forEach((file, index) => {
     const div = document.createElement("div");
     div.className = "logsheet-file-item";
@@ -220,7 +232,7 @@ function renderFileList() {
     // Added inline styles to prevent word breaking and keep it in a single line
     div.innerHTML = `
       <div style="display:flex; align-items:center; gap:8px; overflow:hidden; width:100%;">
-        <input type="checkbox" class="ls-checkbox" id="ls-check-${index}" onclick="event.stopPropagation();" style="flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; margin: 0;" />
+        <input type="checkbox" class="ls-checkbox" id="ls-check-${index}" onclick="event.stopPropagation(); updateSelectAllCheckboxState();" style="flex-shrink: 0; width: 15px; height: 15px; cursor: pointer; margin: 0;" />
         <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-grow: 1;" title="${file.basename}">${file.basename}</span>
       </div>
     `;
@@ -228,6 +240,23 @@ function renderFileList() {
     div.onclick = () => selectFileIndex(index);
     sidebar.appendChild(div);
   });
+}
+
+// 🟢 NEW: Select All ഫംഗ്ഷൻ
+function toggleSelectAllLogsheets(isChecked) {
+  const checkboxes = document.querySelectorAll(".ls-checkbox");
+  checkboxes.forEach((cb) => {
+    cb.checked = isChecked;
+  });
+}
+
+// 🟢 NEW: വ്യക്തിഗത ചെക്ക്ബോക്സുകൾ മാറുമ്പോൾ Select All ചെക്ക്ബോക്സ് സിങ്ക് ചെയ്യുന്നു
+function updateSelectAllCheckboxState() {
+  const selectAll = document.getElementById("selectAllLogsheets");
+  if (!selectAll) return;
+  const checkboxes = document.querySelectorAll(".ls-checkbox");
+  const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+  selectAll.checked = allChecked;
 }
 
 // 🟢 Helper to format file size
