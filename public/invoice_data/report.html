@@ -2548,9 +2548,20 @@
               // Rule 2: Virtual adjustment for L&T 31st day
               if (sNameUpper.includes("L&T") || sNameUpper.includes("L & T")) {
                 if (daysInMonth === 31) {
-                  let shift_amt = siteDataMap[sName].ts_31st_shift || 0;
-                  virtual_ts_nr += shift_amt;
-                  virtual_ts_ot -= shift_amt;
+                  // 🟢 Maasathil Friday ozhike ethra days undennu nokkunnu
+                  let nonFridayDays = 0;
+                  for (let d = 1; d <= 31; d++) {
+                    if (getDayName(d, monthStr, yearStr) !== "Fri") nonFridayDays++;
+                  }
+
+                  // 27 working days indengil 31st day poornnamayum OT aanu, NR-ilekku shift illa!
+                  if (nonFridayDays < 27) {
+                    let shift_amt = siteDataMap[sName].ts_31st_shift || 0;
+                    let maxPossibleShift = Math.max(0, 260 - virtual_ts_nr);
+                    let actualShift = Math.min(shift_amt, maxPossibleShift);
+                    virtual_ts_nr += actualShift;
+                    virtual_ts_ot -= actualShift;
+                  }
                 }
               }
 
@@ -2696,11 +2707,33 @@
               vehicle_type: siteDataMap[sName].vehicle_type || vehicle_type,
               field_co: siteDataMap[sName].field_co,
               site_co: siteDataMap[sName].site_co,
-              alt_nr: calc_ts_nr + (siteDataMap[sName].ts_31st_shift || 0),
-              alt_ot:
-                calc_ts_ot >= (siteDataMap[sName].ts_31st_shift || 0)
-                  ? calc_ts_ot - (siteDataMap[sName].ts_31st_shift || 0)
-                  : 0,
+              // 🟢 260 NR cap applied strictly
+              alt_nr: (() => {
+                if (daysInMonth !== 31) return calc_ts_nr;
+                let nonFridayDays = 0;
+                for (let d = 1; d <= 31; d++) {
+                  if (getDayName(d, monthStr, yearStr) !== "Fri") nonFridayDays++;
+                }
+                if (nonFridayDays >= 27) return calc_ts_nr; // 27 days ullappol 31st shift aavilla
+
+                let shift = siteDataMap[sName].ts_31st_shift || 0;
+                let maxShift = Math.max(0, 260 - calc_ts_nr);
+                let actualShift = Math.min(shift, maxShift);
+                return calc_ts_nr + actualShift;
+              })(),
+              alt_ot: (() => {
+                if (daysInMonth !== 31) return calc_ts_ot;
+                let nonFridayDays = 0;
+                for (let d = 1; d <= 31; d++) {
+                  if (getDayName(d, monthStr, yearStr) !== "Fri") nonFridayDays++;
+                }
+                if (nonFridayDays >= 27) return calc_ts_ot; // 27 days ullappol 31st shift aavilla
+
+                let shift = siteDataMap[sName].ts_31st_shift || 0;
+                let maxShift = Math.max(0, 260 - calc_ts_nr);
+                let actualShift = Math.min(shift, maxShift);
+                return calc_ts_ot >= actualShift ? calc_ts_ot - actualShift : 0;
+              })(),
             });
           });
         });

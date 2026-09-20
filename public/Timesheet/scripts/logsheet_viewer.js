@@ -581,37 +581,36 @@ async function generatePdfFromFiles(
         );
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       } else {
-        // ഇമേജ് ആണെങ്കിൽ അതിനെ ക്യാൻവാസ് വഴി റീഡ് ചെയ്ത് PDF പേജാക്കി മാറ്റുന്നു
-        const bitmap = await createImageBitmap(blob, {
-          imageOrientation: "from-image",
-        });
-        const canvas = document.createElement("canvas");
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(bitmap, 0, 0);
+        // 🟢 FIX: jsPDF മാറ്റി pdf-lib നേരിട്ട് ഉപയോഗിക്കുന്നു (Zero White Space / Exact Image Size)
+        let embeddedImage;
+        const isPng = file.mime ? file.mime.includes("png") : file.filename.toLowerCase().endsWith(".png");
 
-        const imgData = canvas.toDataURL("image/jpeg", 1.0);
-        const singleImgPdf = new jsPDF({
-          orientation: bitmap.width > bitmap.height ? "l" : "p",
-          unit: "mm",
-          format: [bitmap.width * 0.264583, bitmap.height * 0.264583],
-        });
-        singleImgPdf.addImage(
-          imgData,
-          "JPEG",
-          0,
-          0,
-          bitmap.width * 0.264583,
-          bitmap.height * 0.264583,
-          undefined,
-          "FAST",
-        );
+        try {
+          if (isPng) {
+            embeddedImage = await mergedPdf.embedPng(arrayBuffer);
+          } else {
+            embeddedImage = await mergedPdf.embedJpg(arrayBuffer);
+          }
+        } catch (embedErr) {
+          // ചില ഫോർമാറ്റ് പ്രശ്നമുണ്ടെങ്കിൽ ക്യാൻവാസ് വഴി JPG ആക്കി embed ചെയ്യുന്നു
+          const bitmap = await createImageBitmap(blob);
+          const canvas = document.createElement("canvas");
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(bitmap, 0, 0);
+          const fallbackDataUrl = canvas.toDataURL("image/jpeg", 0.95);
+          embeddedImage = await mergedPdf.embedJpg(fallbackDataUrl);
+        }
 
-        const singlePdfBytes = singleImgPdf.output("arraybuffer");
-        const tempPdf = await PDFDocument.load(singlePdfBytes);
-        const [copiedPage] = await mergedPdf.copyPages(tempPdf, [0]);
-        mergedPdf.addPage(copiedPage);
+        // പേജ് സൈസ് ഇമേജിന്റെ കൃത്യം അതേ സൈസിൽ നിർമ്മിക്കുന്നു
+        const page = mergedPdf.addPage([embeddedImage.width, embeddedImage.height]);
+        page.drawImage(embeddedImage, {
+          x: 0,
+          y: 0,
+          width: embeddedImage.width,
+          height: embeddedImage.height,
+        });
       }
     }
 
