@@ -573,7 +573,7 @@ async function generatePdfFromFiles(
       const arrayBuffer = await blob.arrayBuffer();
 
       if (file.mime && file.mime.includes("pdf")) {
-        // ഇതോരു PDF ആണെങ്കിൽ, നേരിട്ട് പേജുകൾ കോപ്പി ചെയ്ത് ലയിപ്പിക്കുന്നു
+        // PDF anengil direct pages copy cheythu merge cheyyunnu
         const existingPdf = await PDFDocument.load(arrayBuffer);
         const copiedPages = await mergedPdf.copyPages(
           existingPdf,
@@ -581,29 +581,21 @@ async function generatePdfFromFiles(
         );
         copiedPages.forEach((page) => mergedPdf.addPage(page));
       } else {
-        // 🟢 FIX: jsPDF മാറ്റി pdf-lib നേരിട്ട് ഉപയോഗിക്കുന്നു (Zero White Space / Exact Image Size)
-        let embeddedImage;
-        const isPng = file.mime ? file.mime.includes("png") : file.filename.toLowerCase().endsWith(".png");
+        // 🟢 FIX: EXIF Orientation & Rotation Fix (UI-il kaanunna athe pole straight aavum)
+        const bitmap = await createImageBitmap(blob, {
+          imageOrientation: "from-image"
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(bitmap, 0, 0);
 
-        try {
-          if (isPng) {
-            embeddedImage = await mergedPdf.embedPng(arrayBuffer);
-          } else {
-            embeddedImage = await mergedPdf.embedJpg(arrayBuffer);
-          }
-        } catch (embedErr) {
-          // ചില ഫോർമാറ്റ് പ്രശ്നമുണ്ടെങ്കിൽ ക്യാൻവാസ് വഴി JPG ആക്കി embed ചെയ്യുന്നു
-          const bitmap = await createImageBitmap(blob);
-          const canvas = document.createElement("canvas");
-          canvas.width = bitmap.width;
-          canvas.height = bitmap.height;
-          const ctx = canvas.getContext("2d");
-          ctx.drawImage(bitmap, 0, 0);
-          const fallbackDataUrl = canvas.toDataURL("image/jpeg", 0.95);
-          embeddedImage = await mergedPdf.embedJpg(fallbackDataUrl);
-        }
+        // Canvas വഴി high-quality JPG Data URL aakki embed cheyyunnu
+        const cleanDataUrl = canvas.toDataURL("image/jpeg", 0.95);
+        const embeddedImage = await mergedPdf.embedJpg(cleanDataUrl);
 
-        // പേജ് സൈസ് ഇമേജിന്റെ കൃത്യം അതേ സൈസിൽ നിർമ്മിക്കുന്നു
+        // Exact image size-il mathram page create cheyyunnu (Zero excess white space)
         const page = mergedPdf.addPage([embeddedImage.width, embeddedImage.height]);
         page.drawImage(embeddedImage, {
           x: 0,
