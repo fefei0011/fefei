@@ -2253,6 +2253,8 @@ function startRecordPoll(p, m, y) {
 
               if (data.requestedBy && data.requestedBy !== "REJECTED" && !incomingRequestActive) {
                   incomingRequestActive = true;
+                  // 🟢 Popup load aavunnathinu munpu thanne sound play aakunnu (Works in Background Tabs)
+                  playTransferAlertSound();
                   showTransferRequestPopup(data.requestedBy, p, m, y);
               }
           } else {
@@ -2416,13 +2418,25 @@ async function requestEditAccess() {
   }
 }
 
-function showTransferRequestPopup(requester, p, m, y) {
-  // 🟢 NEW: Play Bell Audio Alert
+// 🟢 Background-il aayalum loud aayi play cheyyunna Audio function
+function playTransferAlertSound() {
   try {
     const bellAudio = new Audio("../alert_mp3/bell_alert.mp3");
-    bellAudio.play().catch(e => console.log("Audio autoplay prevented by browser:", e));
-  } catch (e) {}
+    bellAudio.volume = 1.0;
+    
+    // Background tab audio play fix
+    let playPromise = bellAudio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(error => {
+        console.warn("Audio autoplay blocked or failed:", error);
+      });
+    }
+  } catch (e) {
+    console.error("Audio trigger error:", e);
+  }
+}
 
+function showTransferRequestPopup(requester, p, m, y) {
   let timerInterval;
   Swal.fire({
     title: 'Edit Access Requested',
