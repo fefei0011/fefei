@@ -445,35 +445,39 @@ async function triggerFetch() {
     if (!lockData.success) {
       if (lockData.lockedBy) {
         let lockedUser = lockData.lockedBy.toUpperCase();
-        
-        // 🟢 Modal Popup മാറ്റി മുകളിൽ വലതുവശത്ത് Toast Notification കാണിക്കുന്നു (No OK Click Required)
+
         Swal.fire({
           toast: true,
-          position: 'top-end',
-          icon: 'warning',
+          position: "top-end",
+          icon: "warning",
           title: `Locked by [ ${lockedUser} ]`,
-          text: 'Opening in Read-Only mode',
+          text: "Opening in Read-Only mode",
           showConfirmButton: false,
-          timer: 3500,
-          timerProgressBar: true
+          timer: 3000,
+          timerProgressBar: true,
         });
-        
+
         isReadOnlyMode = true;
-        // 🟢 FIX: Reset button completely so user can request again
+        currentLockedRecord = null;
         let btnReq = document.getElementById("btnRequestEdit");
-        btnReq.style.display = "inline-block"; 
-        btnReq.style.opacity = "1";
-        btnReq.disabled = false;
-        amIWaitingForApproval = false; // Reset waiting state
+        if (btnReq) {
+          btnReq.style.display = "inline-block";
+          btnReq.style.opacity = "1";
+          btnReq.disabled = false;
+        }
+        amIWaitingForApproval = false;
       } else {
-        await customAlert(lockData.message || "Session expired or invalid. Please login again.", "Session Timeout");
-        logout();
-        return;
+        // 🟢 FIX: അനാവശ്യമായി ലോഗൗട്ട് ആകുന്നത് ഒഴിവാക്കി. സിസ്റ്റം സേഫ് ആയി Read-Only യിൽ ഓപ്പൺ ചെയ്യും.
+        console.warn("Lock acquire notice:", lockData.message);
+        isReadOnlyMode = true;
+        currentLockedRecord = null;
       }
     } else {
+      // 🟢 OWNERSHIP CONFIRMED: യൂസർ 2 ആക്സസ് നേടിയാൽ ആക്സസ് സുരക്ഷിതമായി നിലനിർത്തുന്നു
       isReadOnlyMode = false;
-      document.getElementById("btnRequestEdit").style.display = "none";
       currentLockedRecord = { plate: p, month: m, year: y };
+      const btnReq = document.getElementById("btnRequestEdit");
+      if (btnReq) btnReq.style.display = "none";
     }
 
     const res = await fetch(`/timesheet/api/grid-data?month=${m}&year=${y}&plate=${p}&_t=${ts}`, { headers, cache: "no-store" });
@@ -2190,13 +2194,6 @@ async function applyLockStatus(selectedMonthStr, selectedYearStr, silent = false
 }
 
 window.addEventListener("focus", async () => {
-    const m = document.getElementById("selMonth").value;
-    const y = document.getElementById("selYear").value;
-    const p = document.getElementById("selPlate").value.trim();
-    
-    if (m && y && p && document.getElementById("gridBody").innerHTML.includes("grid-input")) {
-      await applyLockStatus(m, y, true); 
-    }
 });
 
 
@@ -2233,15 +2230,18 @@ function startRecordPoll(p, m, y) {
           }
 
           if (isMe) {
+              // 🟢 യൂസർ 2 ആക്സസ് നേടിയാൽ ലോക്ക് ഓണർഷിപ്പ് സെറ്റ് ചെയ്യുന്നു
+              currentLockedRecord = { plate: p, month: m, year: y };
+
               if (isReadOnlyMode) {
                   isReadOnlyMode = false;
                   amIWaitingForApproval = false;
-                  resetBellButton(); // 🟢 ടൈമർ നിർത്തി ബെൽ റീസെറ്റ് ചെയ്യുന്നു
+                  resetBellButton();
                   clearInterval(recordPollTimer); 
                   
                   Swal.fire({
                       title: "Access Granted! 🔓",
-                      text: "Refreshing grid to load the latest data...",
+                      text: "You now have full edit access.",
                       icon: "success",
                       timer: 1500,
                       showConfirmButton: false
