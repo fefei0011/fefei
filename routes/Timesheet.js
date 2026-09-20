@@ -969,34 +969,120 @@ router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
 const activeRecordLocks = new Map();
 // Structure: { username, timestamp, requestedBy, requestTime }
 
+// 🟢 ROBUST MULTI-USER CONCURRENCY CONTROL
 router.post("/api/record-lock/request", verifyToken, (req, res) => {
   const { plate, month, year } = req.body;
-  const lockKey = `${plate}_${month}_${year}`;
-  const username = req.user.username;
+  if (!plate || !month || !year) {
+    return res.json({ success: false, message: "Missing lock parameters" });
+  }
+
+  // Normalize key
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const currentUsername = String(req.user.username).trim();
   const now = Date.now();
 
   const existingLock = activeRecordLocks.get(lockKey);
 
   if (existingLock) {
-     const oldUser = String(existingLock.username).trim().toLowerCase();
-     const newUser = String(username).trim().toLowerCase();
+    const lockOwner = String(existingLock.username).trim();
 
-     if (oldUser !== newUser && (now - existingLock.timestamp < 15 * 60 * 1000)) {
-       return res.json({ success: false, lockedBy: existingLock.username });
-     }
+    // 🟢 1. സ്വന്തം ലോക്ക് ആണെങ്കിൽ എപ്പോഴും ആക്സസ് നൽകുക (Never block the owner)
+    if (lockOwner.toLowerCase() === currentUsername.toLowerCase()) {
+      existingLock.timestamp = now; // Refresh activity timestamp
+      return res.json({ success: true, owner: lockOwner });
+    }
+
+    // 🟢 2. മറ്റൊരാളുടെ ലോക്ക് 10 മിനിറ്റിൽ കൂടുതൽ ഇൻആക്ടീവ് ആണെങ്കിൽ ഓട്ടോ-റിലീസ്
+    if (now - existingLock.timestamp > 10 * 60 * 1000) {
+      activeRecordLocks.delete(lockKey);
+    } else {
+      // നിലവിൽ മറ്റൊരാൾ ആക്ടീവ് ആണ്
+      return res.json({ success: false, lockedBy: existingLock.username });
+    }
   }
 
-  activeRecordLocks.set(lockKey, { username, timestamp: now, requestedBy: null, requestTime: null });
+  // പുതിയ ലോക്ക് ഓണർഷിപ്പ് നൽകുന്നു
+  activeRecordLocks.set(lockKey, {
+    username: currentUsername,
+    timestamp: now,
+    requestedBy: null,
+    requestTime: null,
+  });
+  res.json({ success: true, owner: currentUsername });
+});
+
+// 🟢 INSTANT RELEASE: ടാബ് മാറുമ്പോഴോ ക്ലോസ് ചെയ്യുമ്പോഴോ ഉടനടി റിലീസ് ചെയ്യുന്നു
+router.post("/api/record-lock/release", verifyToken, (req, res) => {
+  const { plate, month, year } = req.body;
+  if (!plate || !month || !year) return res.json({ success: true });
+
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const currentUsername = String(req.user.username).trim().toLowerCase();
+
+  const existingLock = activeRecordLocks.get(lockKey);
+  if (existingLock) {
+    // ആ വ്യക്തി തന്നെയാണ് റിലീസ് ചെയ്യുന്നതെങ്കിൽ ഉടൻ മായ്ക്കുന്നു
+    if (String(existingLock.username).trim().toLowerCase() === currentUsername) {
+      activeRecordLocks.delete(lockKey);
+    }
+  }
   res.json({ success: true });
 });
 
-router.post("/api/record-lock/release", verifyToken, (req, res) => {
-  const { plate, month, year } = req.body;
-  const lockKey = `${plate}_${month}_${year}`;
-  if (activeRecordLocks.has(lockKey) && String(activeRecordLocks.get(lockKey).username).trim().toLowerCase() === String(req.user.username).trim().toLowerCase()) {
-      activeRecordLocks.delete(lockKey);
+// 🟢 RESOLVE TRANSFER: യൂസർ 2-ന് ഓണർഷിപ്പ് പെർമനന്റായി കൈമാറുന്നു
+router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
+  const { plate, month, year, action } = req.body;
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+  const currentUser = String(req.user.username).trim().toLowerCase();
+
+  if (!lock) return res.json({ success: false, message: "No active lock" });
+
+  const requester = lock.requestedBy;
+
+  if (action === "force" && requester && requester.toLowerCase() === currentUser) {
+    lock.username = req.user.username; // User 2 becomes owner
+    lock.timestamp = Date.now();
+    lock.requestedBy = null;
+    lock.requestTime = null;
+    return res.json({ success: true, newOwner: lock.username });
+  } else if (String(lock.username).trim().toLowerCase() === currentUser) {
+    if (action === "approve" && requester) {
+      lock.username = requester; // Hand over to User 2
+      lock.timestamp = Date.now();
+      lock.requestedBy = null;
+      lock.requestTime = null;
+      return res.json({ success: true, newOwner: lock.username });
+    } else if (action === "reject") {
+      lock.requestedBy = "REJECTED";
+      lock.requestTime = null;
+      return res.json({ success: true });
+    }
   }
-  res.json({ success: true });
+
+  res.json({ success: false });
+});
+
+// 🟢 POLL CHECK: തത്സമയം നിലവിലെ സ്റ്റാറ്റസ് ഉറപ്പുവരുത്തുന്നു
+router.get("/api/record-lock/poll", verifyToken, (req, res) => {
+  const { plate, month, year } = req.query;
+  const cleanP = String(plate || "").replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+
+  if (!lock || (Date.now() - lock.timestamp >= 10 * 60 * 1000)) {
+    return res.json({ locked: false });
+  }
+
+  res.json({
+    locked: true,
+    owner: lock.username,
+    requestedBy: lock.requestedBy,
+    requestTime: lock.requestTime,
+  });
 });
 
 // 🟢 NEW: API for User B to request edit access
