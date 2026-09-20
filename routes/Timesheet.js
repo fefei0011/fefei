@@ -1088,7 +1088,10 @@ router.get("/api/record-lock/poll", verifyToken, (req, res) => {
 // 🟢 NEW: API for User B to request edit access
 router.post("/api/record-lock/request-transfer", verifyToken, (req, res) => {
   const { plate, month, year } = req.body;
-  const lockKey = `${plate}_${month}_${year}`;
+  if (!plate || !month || !year) return res.json({ success: false, message: "Missing parameters" });
+  
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
   const lock = activeRecordLocks.get(lockKey);
   
   if (lock) {

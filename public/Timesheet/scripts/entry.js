@@ -2363,8 +2363,53 @@ async function requestEditAccess() {
           }, 1000);
 
       } else {
-          customAlert(data.message, "Notice");
+          // 🟢 FIX: റെക്കോർഡ് നിലവിൽ ഫ്രീ ആണെങ്കിൽ (ആരും ലോക്ക് ചെയ്തിട്ടില്ലെങ്കിൽ) ഉടൻ ഈ യൂസർക്ക് എഡിറ്റ് ആക്സസ് നൽകുന്നു
           resetBellButton();
+          
+          if (data.message && data.message.toLowerCase().includes("not currently locked")) {
+              const claimRes = await fetch('/timesheet/api/record-lock/request', {
+                  method: 'POST',
+                  headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+                  body: JSON.stringify({ plate: p, month: m, year: y })
+              });
+              const claimData = await claimRes.json();
+              
+              if (claimData.success) {
+                  isReadOnlyMode = false;
+                  currentLockedRecord = { plate: p, month: m, year: y };
+                  
+                  // എല്ലാ ഇൻപുട്ടുകളും എഡിറ്റബിൾ ആക്കുന്നു
+                  document.querySelectorAll(".grid-input").forEach(el => {
+                      el.disabled = false;
+                      el.style.backgroundColor = "";
+                      el.style.cursor = "text";
+                      el.style.color = "";
+                      el.style.opacity = "1";
+                  });
+                  
+                  const btnReq = document.getElementById("btnRequestEdit");
+                  if (btnReq) btnReq.style.display = "none";
+                  
+                  const saveLabel = document.getElementById("saveStatus");
+                  if (saveLabel) {
+                      saveLabel.innerText = "✓ Editable";
+                      saveLabel.className = "save-indicator status-saved";
+                      setTimeout(() => { saveLabel.className = "save-indicator"; }, 2000);
+                  }
+                  
+                  Swal.fire({
+                      toast: true,
+                      position: "top-end",
+                      icon: "success",
+                      title: "Unlocked! You have full edit access.",
+                      showConfirmButton: false,
+                      timer: 2500
+                  });
+                  return;
+              }
+          }
+          
+          customAlert(data.message, "Notice");
       }
   } catch(e) {
       resetBellButton();
