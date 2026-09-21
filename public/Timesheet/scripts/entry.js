@@ -1,15 +1,7 @@
 const token = localStorage.getItem("timesheetToken");
 const userStr = localStorage.getItem("timesheetUser");
 
-// 🟢 ടോക്കണോ യൂസർ ഡാറ്റയോ ഇല്ലെങ്കിൽ നിർബന്ധമായും ലോഗൗട്ട് ആക്കും
-if (!token || !userStr) {
-  localStorage.removeItem("timesheetToken");
-  localStorage.removeItem("timesheetUser");
-  const currentPage = encodeURIComponent(
-    window.location.pathname.split("/").pop() + window.location.search,
-  );
-  window.location.href = "index.html?redirect=" + currentPage;
-}
+if (!token || !userStr || (localStorage.getItem("lastActive") && Date.now() - Number(localStorage.getItem("lastActive")) > 18000000)) { localStorage.clear(); window.location.href = "index.html"; } else { localStorage.setItem("lastActive", String(Date.now())); }
 
 const dDate = new Date();
 document.getElementById("selYear").value = dDate.getFullYear();
