@@ -156,8 +156,8 @@ async function executeLogin() {
     
     if (data.success) {
       localStorage.setItem("invoiceToken", data.token);
-      // Update local storage so existing ERP API calls use this token format temporarily
       localStorage.setItem("token", data.token); 
+      localStorage.setItem("savedBillingUsername", username);
       loadApp();
     } else alert(data.message);
   } catch (err) {
@@ -2351,17 +2351,27 @@ function submitBulkData() {
   document.getElementById("loader").style.display = "flex";
   document.getElementById("loaderText").innerText = "Saving to ERP...";
 
+  const authToken = localStorage.getItem("invoiceToken") || localStorage.getItem("token");
+
   fetch("/billing/save", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${authToken}`,
     },
     body: JSON.stringify({ billing_period: fullMonth, items: dataToUpdate }),
   })
-    .then((res) => res.json())
-    .then((res) => {
+    .then(async (res) => {
       document.getElementById("loader").style.display = "none";
+      if (res.status === 401 || res.status === 403) {
+        // 🟢 ടോക്കൺ എക്സ്പയർ ആയാൽ വർക്ക് നഷ്ടപ്പെടാതെ പോപ്പ്അപ്പ് തുറക്കുന്നു
+        openReLoginModal(() => submitBulkData());
+        return null;
+      }
+      return res.json();
+    })
+    .then((res) => {
+      if (!res) return;
       if (res.success) {
         showToast("All Bulk Bills Saved to ERP!");
         fetchDataSilently();
@@ -2599,17 +2609,27 @@ function submitSingleCard(cardId) {
   document.getElementById("loader").style.display = "flex";
   document.getElementById("loaderText").innerText = "Saving Single Table...";
 
+  const authToken = localStorage.getItem("invoiceToken") || localStorage.getItem("token");
+
   fetch("/billing/save", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${authToken}`,
     },
     body: JSON.stringify({ billing_period: fullMonth, items: dataToUpdate }),
   })
-    .then((res) => res.json())
-    .then((res) => {
+    .then(async (res) => {
       document.getElementById("loader").style.display = "none";
+      if (res.status === 401 || res.status === 403) {
+        // 🟢 ടോക്കൺ എക്സ്പയർ ആയാൽ സിംഗിൾ കാർഡിന്റെ സേവിംഗ് തിരികെ എക്സിക്യൂട്ട് ചെയ്യാൻ കാക്കുന്നു
+        openReLoginModal(() => submitSingleCard(cardId));
+        return null;
+      }
+      return res.json();
+    })
+    .then((res) => {
+      if (!res) return;
       if (res.success) {
         showToast("Table Saved to ERP!");
         fetchDataSilently();
@@ -3004,5 +3024,121 @@ async function copyCardAndWhatsApp(cardId, ownerName) {
     revertInputsFromText(printArea);
     document.getElementById("loader").style.display = "none";
     showToast("Error generating image.");
+  }
+}
+
+
+/* ==========================================================
+   🟢 DYNAMIC RE-LOGIN & AUDIO ALERT ON SESSION EXPIRY
+   ========================================================== */
+let pendingSaveAction = null;
+
+function playSessionAlertSound() {
+  const audio = document.getElementById("sessionAlertAudio");
+  if (audio) {
+    audio.currentTime = 0;
+    audio.play().catch((err) => console.log("Audio play blocked by browser:", err));
+  }
+}
+
+function openReLoginModal(resumeCallback) {
+  pendingSaveAction = resumeCallback;
+  playSessionAlertSound();
+
+  const modal = document.getElementById("reLoginModal");
+  const userInput = document.getElementById("reLoginUser");
+  const passInput = document.getElementById("reLoginPass");
+  const errDiv = document.getElementById("reLoginError");
+
+  if (errDiv) errDiv.style.display = "none";
+  if (passInput) passInput.value = "";
+
+  // Saved username or decoded username auto-fill cheyyunnu
+  let lastUser = localStorage.getItem("savedBillingUsername") || "";
+  if (!lastUser) {
+    const token = localStorage.getItem("invoiceToken") || localStorage.getItem("token");
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        lastUser = payload.username || payload.user || payload.id || "";
+      } catch (e) {}
+    }
+  }
+  if (!lastUser) {
+    lastUser = document.getElementById("loginUserId")?.value.trim() || "";
+  }
+
+  if (userInput) userInput.value = lastUser;
+  if (modal) modal.style.display = "flex";
+
+  setTimeout(() => {
+    if (userInput && !userInput.value) userInput.focus();
+    else if (passInput) passInput.focus();
+  }, 200);
+}
+
+function closeReLoginModal() {
+  const modal = document.getElementById("reLoginModal");
+  if (modal) modal.style.display = "none";
+  pendingSaveAction = null;
+}
+
+async function executeReLoginAndResume() {
+  const userInput = document.getElementById("reLoginUser");
+  const passInput = document.getElementById("reLoginPass");
+  const errDiv = document.getElementById("reLoginError");
+
+  const username = userInput ? userInput.value.trim() : "";
+  const password = passInput ? passInput.value.trim() : "";
+
+  if (!username) {
+    errDiv.innerText = "Please enter your username";
+    errDiv.style.display = "block";
+    if (userInput) userInput.focus();
+    return;
+  }
+
+  if (!password) {
+    errDiv.innerText = "Please enter your password";
+    errDiv.style.display = "block";
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  errDiv.innerText = "Verifying...";
+  errDiv.style.color = "#0284c7";
+  errDiv.style.display = "block";
+
+  try {
+    const res = await fetch("/api/invoice-auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, password: password }),
+    });
+
+    const data = await res.json();
+    if (data.success && data.token) {
+      // 1. Puthiya token-um username-um store cheyyunnu
+      localStorage.setItem("invoiceToken", data.token);
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("savedBillingUsername", username);
+
+      closeReLoginModal();
+      showToast("✓ Session Restored! Resuming save...");
+
+      // 2. Data auto-save cheyyunnu
+      if (typeof pendingSaveAction === "function") {
+        setTimeout(() => {
+          pendingSaveAction();
+          pendingSaveAction = null;
+        }, 300);
+      }
+    } else {
+      errDiv.style.color = "#ef4444";
+      errDiv.innerText = data.message || "Invalid Password!";
+    }
+  } catch (err) {
+    errDiv.style.color = "#ef4444";
+    errDiv.innerText = "Connection error. Try again.";
   }
 }
