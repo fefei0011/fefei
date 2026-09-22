@@ -1132,6 +1132,7 @@
         const tbody = document.getElementById(containerId);
         tbody.innerHTML = "";
         list.forEach((item) => {
+          // Description eppozhum editable text box aayi nalkunnu, fixed rows-nu delete button mathram restrict cheyyunnu
           const isFixed =
             item.fixed ||
             item.desc === "Office Rent" ||
@@ -1140,9 +1141,8 @@
           const delBtn = isFixed
             ? `<span style="display:inline-block; width:15px;"></span>`
             : `<button class="del-btn" onclick="this.closest('tr').remove(); triggerAutoSave();">✖</button>`;
-          const descHtml = isFixed
-            ? `<span>${item.desc}</span><input type="hidden" class="exp-desc" value="${item.desc}">`
-            : `<input type="text" class="editable-input exp-desc" style="text-align: left; width: 85%;" value="${item.desc}" oninput="triggerAutoSave()">`;
+          
+          const descHtml = `<input type="text" class="editable-input exp-desc" style="text-align: left; width: 85%;" value="${item.desc}" oninput="triggerAutoSave()">`;
 
           tbody.innerHTML += `
           <tr>
