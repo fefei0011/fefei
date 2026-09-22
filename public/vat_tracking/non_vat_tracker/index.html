@@ -882,6 +882,7 @@
                     if (json.success && Array.isArray(json.data)) {
                         const list = json.data.map(v => ({
                             plate: v.plate_no || "N/A",
+                            site_name: v.site_name || "",
                             nr: Number(v.nr_hours || 0),
                             ot: Number(v.ot_hours || 0),
                             total: Number(v.total_amount || 0),
@@ -940,14 +941,32 @@
             } else {
                 let totalNr = 0, totalOt = 0, grandTotal = 0;
 
+                // 🟢 ഒരേ പ്ലേറ്റ് നമ്പർ ഒന്നിൽക്കൂടുതൽ വന്നിട്ടുണ്ടോ എന്ന് കണക്കാക്കുന്നു
+                const plateCounts = {};
+                plates.forEach(p => {
+                    const pl = (p.plate || "").trim().toUpperCase();
+                    plateCounts[pl] = (plateCounts[pl] || 0) + 1;
+                });
+
                 plates.forEach(p => {
                     totalNr += p.nr;
                     totalOt += p.ot;
                     grandTotal += p.total;
 
+                    const plKey = (p.plate || "").trim().toUpperCase();
+                    const isMulti = plateCounts[plKey] > 1;
+
+                    // ഒന്നിൽ കൂടുതൽ ഉണ്ടെങ്കിൽ മാത്രം താഴെ ചെറിയ അക്ഷരത്തിൽ സൈറ്റ് നെയിം നൽകുന്നു
+                    const siteSubText = (isMulti && p.site_name) 
+                        ? `<div style="font-size: 10px; color: #64748b; font-weight: normal; margin-top: 2px;">${escapeHTML(p.site_name)}</div>` 
+                        : '';
+
                     tbody.innerHTML += `
                         <tr>
-                            <td style="font-weight: 600; color: #1e293b;">${escapeHTML(p.plate)}</td>
+                            <td style="font-weight: 600; color: #1e293b;">
+                                <div>${escapeHTML(p.plate)}</div>
+                                ${siteSubText}
+                            </td>
                             <td>${p.nr}</td>
                             <td>${p.ot}</td>
                             <td style="font-weight: 600; color: #0f766e;">${p.total > 0 ? p.total.toFixed(2) : ""}</td>
@@ -978,14 +997,25 @@
             
             const shortM = monthsFull[monthIdx].substring(0, 3);
             const shortY = currentYear.toString().slice(-2);
-            const label = `${shortM}-${shortY} ${siteFirst} Rent Bill`;
+            const formattedSite = siteFirst ? (siteFirst.charAt(0).toUpperCase() + siteFirst.slice(1).toLowerCase()) : "";
+            const label = `${shortM}-${shortY} ${formattedSite} Rent Bill`;
 
             let textToCopy = label;
             if (plates && plates.length > 0) {
+                // Ore plate number onnil kooduthal entry aayi vannittundo ennu count cheyyunnu
+                const plateCounts = {};
+                plates.forEach(p => {
+                    const pl = (p.plate || "").trim().toUpperCase();
+                    plateCounts[pl] = (plateCounts[pl] || 0) + 1;
+                });
+
                 const parts = plates.map(p => {
+                    const plKey = (p.plate || "").trim().toUpperCase();
+                    const isMulti = plateCounts[plKey] > 1;
+                    const sitePart = (isMulti && p.site_name) ? ` ${p.site_name.trim()}` : '';
                     const nrPart = `NR ${p.nr}`;
-                    const otPart = (Number(p.ot) > 0) ? `  OT ${p.ot}` : '';
-                    return `${p.plate} [${nrPart}${otPart}]`;
+                    const otPart = (Number(p.ot) > 0) ? `   OT ${p.ot}` : '';
+                    return `${p.plate}${sitePart} [${nrPart}${otPart}]`;
                 });
                 textToCopy = `${label} (${parts.join(", ")})`;
             }

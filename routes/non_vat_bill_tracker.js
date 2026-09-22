@@ -317,12 +317,10 @@ router.get("/data", verifyAccessCode, async (req, res) => {
                 }
 
                 if (!isVatVeh) {
-                  if (pKey) {
-                    if (!processedPlates.has(pKey)) {
-                      processedPlates.add(pKey);
-                      monthTsTotal += parseFloat(e.row_total || 0);
-                    }
-                  } else {
+                  // ഒരേ സൈറ്റ് നെയിം ഡ്യൂപ്ലിക്കേറ്റ് ആവാതിരിക്കാനും വ്യത്യസ്ത സൈറ്റുകൾ (Aljoda, Masar etc.) കൂട്ടിയെടുക്കാനും കീ പ്ലേറ്റും സൈറ്റും ചേർക്കുന്നു
+                  const uniqueRowKey = `${pKey}_${e.clean_site_name}`;
+                  if (!processedPlates.has(uniqueRowKey)) {
+                    processedPlates.add(uniqueRowKey);
                     monthTsTotal += parseFloat(e.row_total || 0);
                   }
                 }
@@ -507,8 +505,10 @@ router.get("/vendor-breakdown", verifyAccessCode, async (req, res) => {
           plateLogs,
         );
 
-        // 🟢 ഒരേ വണ്ടി തന്നെ വീണ്ടും വന്നാൽ മാത്രം സ്കിപ്പ് ചെയ്യുന്നു, വ്യത്യസ്ത വണ്ടികളാണെങ്കിൽ എല്ലാം ലിസ്റ്റിൽ ഉൾപ്പെടുത്തുന്നു
-        const uniqueKey = p !== 'N/A' ? p : `${p}_${row.after_adjustment}_${Math.random()}`;
+        // 🟢 ഒരേ പ്ലേറ്റിന് ഒന്നിലധികം സൈറ്റ് എൻട്രികൾ വന്നാൽ വെവ്വേറെ നിലനിർത്താൻ uniqueKey-യിൽ site_name കൂടി ചേർക്കുന്നു
+        const rowSiteName = (row.site_name || "").trim();
+        const uniqueKey = p !== 'N/A' ? `${p}__${rowSiteName.toLowerCase()}` : `${p}_${row.after_adjustment}_${Math.random()}`;
+
         // 🟢 row.company നോക്കാതെ, ആ മാസത്തെ site_log നേരിട്ട് പരിശോധിച്ച് കമ്പനി നിർണ്ണയിക്കുന്നു
         const matchedSiteLog = sLogs.find(l => {
           if ((l.plate_no || "").trim().toUpperCase() !== (p || "").trim().toUpperCase()) return false;
@@ -527,11 +527,17 @@ router.get("/vendor-breakdown", verifyAccessCode, async (req, res) => {
         if (!plateGroups[uniqueKey]) {
           plateGroups[uniqueKey] = {
             plate_no: displayPlate,
+            site_name: rowSiteName,
             nr_hours: parseFloat(row.nhr || 0),
             ot_hours: parseFloat(row.othr || 0),
             total_amount: parseFloat(row.after_adjustment || 0),
             company: monthCompany,
           };
+        } else {
+          // ഒരേ പ്ലേറ്റും ഒരേ സൈറ്റും തന്നെയുള്ള യഥാർത്ഥ ഡ്യൂപ്ലിക്കേറ്റുകൾ വരികയാണെങ്കിൽ മാത്രം കൂട്ടിച്ചേർക്കുന്നു
+          plateGroups[uniqueKey].nr_hours += parseFloat(row.nhr || 0);
+          plateGroups[uniqueKey].ot_hours += parseFloat(row.othr || 0);
+          plateGroups[uniqueKey].total_amount += parseFloat(row.after_adjustment || 0);
         }
       }
     });
@@ -539,6 +545,7 @@ router.get("/vendor-breakdown", verifyAccessCode, async (req, res) => {
     const finalRows = Object.values(plateGroups)
       .map((p) => ({
         plate_no: p.plate_no,
+        site_name: p.site_name || "",
         nr_hours: Number(p.nr_hours.toFixed(2)),
         ot_hours: Number(p.ot_hours.toFixed(2)),
         total_amount: Number(p.total_amount.toFixed(2)),
