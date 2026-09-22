@@ -678,6 +678,57 @@
       </div>
     </div>
 
+    <!-- 🟢 Timesheet Session Expired Alert Audio -->
+    <audio id="sessionAlertAudio" src="/alert_mp3/entry.mp3" preload="auto"></audio>
+
+    <!-- 🟢 Dynamic Re-login Modal for Preserving Timesheet Data -->
+    <div id="reLoginModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 100002; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); justify-content: center; align-items: center;">
+      <div class="modal-box" style="width: 340px; text-align: center; border-radius: 8px; padding: 25px; background: white; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.3);">
+        <div style="font-size: 36px; margin-bottom: 8px;">⚠️</div>
+        <h3 style="margin: 0 0 8px 0; color: #dc2626; font-family: 'Inter', sans-serif;">Session Expired!</h3>
+        <p style="font-size: 12px; color: #64748b; margin-bottom: 15px; font-family: 'Inter', sans-serif;">
+          Your timesheet entries are safe. Please enter your password to resume.
+        </p>
+        <div style="display: flex; flex-direction: column; align-items: center; width: 100%;">
+          <input
+            type="text"
+            id="reLoginUser"
+            placeholder="Username"
+            readonly
+            tabindex="-1"
+            style="width: 100%; max-width: 260px; box-sizing: border-box; padding: 8px 12px; margin-bottom: 8px; border: 1px solid #cbd5e1; border-radius: 5px; text-align: center; font-size: 13px; font-weight: 700; color: #334155; background: #f1f5f9; cursor: not-allowed; outline: none;"
+          />
+          <input
+            type="password"
+            id="reLoginPass"
+            placeholder="Enter Password"
+            style="width: 100%; max-width: 260px; box-sizing: border-box; padding: 8px 12px; margin-bottom: 12px; border: 1.5px solid #0284c7; border-radius: 5px; text-align: center; font-size: 13px; outline: none; background: #ffffff;"
+            onkeydown="if(event.key==='Enter') executeReLoginAndResume();"
+          />
+        </div>
+        <div id="reLoginError" style="color: #ef4444; font-size: 12px; margin-bottom: 10px; display: none;"></div>
+        <div style="display: flex; justify-content: center; gap: 10px; width: 100%; max-width: 260px; margin: 0 auto;">
+          <button
+            type="button"
+            class="btn"
+            style="flex: 1; height: 38px; background: #dc2626; color: white; display: inline-flex; align-items: center; justify-content: center; text-align: center; border-radius: 5px; font-size: 13px; font-weight: 600; padding: 0; cursor: pointer;"
+            onclick="logout()"
+            title="Discard changes and Logout"
+          >
+            Logout
+          </button>
+          <button
+            type="button"
+            class="btn"
+            style="flex: 1.4; height: 38px; background: #10b981; color: white; display: inline-flex; align-items: center; justify-content: center; text-align: center; border-radius: 5px; font-size: 13px; font-weight: 600; padding: 0; cursor: pointer;"
+            onclick="executeReLoginAndResume()"
+          >
+            Unlock & Resume 🔓
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="scripts/entry.js"></script>
     <script src="scripts/logsheet_viewer.js"></script>
   </body>

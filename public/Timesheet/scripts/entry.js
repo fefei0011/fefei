@@ -1354,8 +1354,7 @@ async function saveCellData(rowIdx, colName, colValue) {
     });
 
     if (response.status === 401 || response.status === 403) {
-      await customAlert("Session expired. Please login again.", "Session Timeout");
-      logout();
+      openTimesheetReLoginModal(() => saveCellData(rowIdx, colName, colValue));
       return;
     }
 
@@ -2488,4 +2487,122 @@ function makeGridReadOnlyLive() {
   saveLabel.innerText = "Read Only";
   saveLabel.className = "save-indicator status-saving";
   saveLabel.style.opacity = "1";
+}
+
+/* ==========================================================
+   🟢 TIMESHEET DYNAMIC RE-LOGIN & AUDIO ALERT ON SESSION EXPIRY
+   ========================================================== */
+let pendingTimesheetAction = null;
+
+function playTimesheetAlertSound() {
+  const audio = document.getElementById("sessionAlertAudio");
+  if (audio) {
+    audio.currentTime = 0;
+    audio.play().catch((err) => console.log("Audio play blocked:", err));
+  }
+}
+
+function openTimesheetReLoginModal(resumeCallback) {
+  pendingTimesheetAction = resumeCallback;
+  playTimesheetAlertSound();
+
+  const modal = document.getElementById("reLoginModal");
+  const userInput = document.getElementById("reLoginUser");
+  const passInput = document.getElementById("reLoginPass");
+  const errDiv = document.getElementById("reLoginError");
+
+  if (errDiv) errDiv.style.display = "none";
+  if (passInput) passInput.value = "";
+
+  let currentUsername = "";
+  if (userStr) {
+    try {
+      const uObj = JSON.parse(userStr);
+      currentUsername = uObj.username || "";
+    } catch (e) {}
+  }
+  if (!currentUsername) {
+    const lToken = localStorage.getItem("timesheetToken");
+    if (lToken) {
+      try {
+        const payload = JSON.parse(atob(lToken.split(".")[1]));
+        currentUsername = payload.username || payload.user || "";
+      } catch (e) {}
+    }
+  }
+
+  if (userInput) userInput.value = currentUsername;
+  if (modal) modal.style.display = "flex";
+
+  setTimeout(() => {
+    if (passInput) passInput.focus();
+  }, 200);
+}
+
+function closeTimesheetReLoginModal() {
+  const modal = document.getElementById("reLoginModal");
+  if (modal) modal.style.display = "none";
+  pendingTimesheetAction = null;
+}
+
+async function executeReLoginAndResume() {
+  const userInput = document.getElementById("reLoginUser");
+  const passInput = document.getElementById("reLoginPass");
+  const errDiv = document.getElementById("reLoginError");
+
+  const username = userInput ? userInput.value.trim() : "";
+  const password = passInput ? passInput.value.trim() : "";
+
+  if (!password) {
+    errDiv.innerText = "Please enter your password";
+    errDiv.style.display = "block";
+    if (passInput) passInput.focus();
+    return;
+  }
+
+  errDiv.innerText = "Verifying...";
+  errDiv.style.color = "#0284c7";
+  errDiv.style.display = "block";
+
+  try {
+    const res = await fetch("/timesheet/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, password: password }),
+    });
+
+    const data = await res.json();
+    if (data.success && data.token) {
+      localStorage.setItem("timesheetToken", data.token);
+      if (data.user) {
+        localStorage.setItem("timesheetUser", JSON.stringify(data.user));
+      }
+      localStorage.setItem("lastActive", String(Date.now()));
+
+      closeTimesheetReLoginModal();
+      
+      // Toast message
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: "Session Restored! Resuming...",
+        showConfirmButton: false,
+        timer: 2000
+      });
+
+      if (typeof pendingTimesheetAction === "function") {
+        setTimeout(() => {
+          pendingTimesheetAction();
+          pendingTimesheetAction = null;
+        }, 300);
+      }
+    } else {
+      errDiv.style.color = "#ef4444";
+      errDiv.innerText = data.message || "Invalid Password!";
+    }
+  } catch (err) {
+    errDiv.style.color = "#ef4444";
+    errDiv.innerText = "Connection error. Try again.";
+  }
 }
