@@ -1079,7 +1079,7 @@
                     const isMulti = plateCounts[plKey] > 1;
                     const sitePart = (isMulti && p.site_name) ? ` ${p.site_name.trim()}` : '';
                     const nrPart = `NR ${p.nr}`;
-                    const otPart = (Number(p.ot) > 0) ? `   OT ${p.ot}` : '';
+                    const otPart = (Number(p.ot) > 0) ? ` OT ${p.ot}` : '';
                     return `${p.plate}${sitePart} [${nrPart}${otPart}]`;
                 });
                 textToCopy = `${label} (${parts.join(", ")})`;
