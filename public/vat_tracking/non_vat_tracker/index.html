@@ -419,6 +419,24 @@
             background: #0f172a;
             color: #ffffff;
         }
+
+        .site-refresh-btn {
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 13px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .site-refresh-btn:hover {
+            color: #38bdf8;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
     </style>
 </head>
 <body>
@@ -803,6 +821,7 @@
                 card.innerHTML = `
                     <div class="site-card-title">
                         <span>SITE: ${escapeHTML(sFirstName.toUpperCase())}</span>
+                        <button class="site-refresh-btn" title="Refresh this site table" onclick="refreshSingleSite('${escapeQuotes(supData.supplier)}', '${escapeQuotes(sFirstName)}', this)">🔄</button>
                     </div>
                     <table class="qc-table">
                         <thead>
@@ -818,6 +837,52 @@
 
                 container.appendChild(card);
             });
+        }
+
+       async function refreshSingleSite(supplierName, siteFirstName, btnEl) {
+            if (btnEl) {
+                btnEl.style.transform = "rotate(360deg)";
+                btnEl.style.transition = "transform 0.5s ease";
+            }
+            showStatus(`Refreshing ${siteFirstName.toUpperCase()}...`, "saving");
+
+            try {
+                const res = await fetch(`/timesheet/api/non-vat-tracking/data?year=${currentYear}`, {
+                    headers: { "x-vat-code": vatCode }
+                });
+                if (res.status === 401) return triggerLoginError();
+                const json = await res.json();
+
+                if (json.success && Array.isArray(json.data)) {
+                    // 1. Updated supplier data in-memory cache-il update cheyyunnu
+                    rawData = json.data;
+                    const supData = rawData.find(s => s.supplier === supplierName);
+
+                    // 2. Aa site-nte old modal cache clear cheyyunnu (puthiya breakdown kittaan)
+                    for (let m = 0; m < 12; m++) {
+                        const cacheKey = `${supplierName}_${siteFirstName}_${currentYear}_${m}`;
+                        delete tsDetailsCache[cacheKey];
+                    }
+
+                    // 3. Current active site card table mathram re-render cheyyunnu
+                    if (supData) {
+                        renderSiteTables(supData);
+                    }
+
+                    showStatus(`✓ ${siteFirstName.toUpperCase()} Updated`, "saved");
+                } else {
+                    showStatus("Update Failed", "error");
+                }
+            } catch (err) {
+                showStatus("Network Error", "error");
+            } finally {
+                if (btnEl) {
+                    setTimeout(() => {
+                        btnEl.style.transform = "none";
+                        btnEl.style.transition = "none";
+                    }, 500);
+                }
+            }
         }
 
         function handleLiveHighlight(inputEl) {
@@ -1292,6 +1357,7 @@
                 }
             };
         }
+        
 
         // Initialize live sync listener
         initLiveSync();
