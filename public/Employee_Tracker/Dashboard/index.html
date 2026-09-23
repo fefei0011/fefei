@@ -1,301 +1,250 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Employee Tracker Dashboard</title>
-    <!-- ExcelJS & FileSaver Libraries -->
     <script src="/node_xlsx_scripts/exceljs.min.js"></script>
     <script src="/node_xlsx_scripts/FileSaver.min.js"></script>
     <script src="/node_xlsx_scripts/sweetalert2.all.min.js"></script>
     <style>
-        * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
-        body { background: #f4f7f6; margin: 0; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .filters { margin: 20px 0; display: flex; gap: 10px; flex-wrap: wrap; position: sticky; top: 0; background: #f4f7f6; padding: 15px 0; z-index: 100; border-bottom: 1px solid #ddd; }
-        .filters button { padding: 8px 15px; border: none; background: #ddd; cursor: pointer; border-radius: 4px; font-weight: bold; transition: 0.3s; }
-        .filters button:hover { background: #bbb; }
-        .filters button.active { background: #007bff; color: white; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
-        
-        /* Search Bar Styles */
-        .search-container { display: flex; align-items: center; gap: 10px; }
-        .search-input-wrapper { position: relative; }
-        .search-input { display: none; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px; width: 250px; outline: none; transition: 0.3s; }
-        .search-input.show { display: block; }
-        .search-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 5px; }
-        .suggestions { display: none; position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-height: 200px; overflow-y: auto; z-index: 1000; margin-top: 5px; }
-        .suggestion-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; color: #333; }
-        .suggestion-item:hover { background: #f4f7f6; }
-        
-        .card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: 0.2s; }
-        .card:hover { transform: translateY(-3px); }
-        .card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #007bff; }
-        .card h3 { margin: 5px 0; font-size: 16px; color: #333; }
-        .card p { margin: 3px 0; font-size: 13px; color: #666; }
-        
-        /* Modal Popup */
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
-        .modal-content { background: white; padding: 25px; border-radius: 8px; width: 550px; max-height: 90vh; overflow-y: auto; position: relative; }
-        .close { position: absolute; right: 15px; top: 10px; font-size: 22px; cursor: pointer; }
-        .form-group { margin-bottom: 12px; }
-        .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; color: #333; }
-        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
-        .dynamic-textarea {
-            width: 100%;
-            min-height: 38px;
-            field-sizing: content; /* കണ്ടന്റ് അനുസരിച്ച് തനിയെ താഴേക്ക് വലുതാകും */
-            padding: 8px;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-size: 14px;
-            resize: none;
-            line-height: 1.4;
-            box-sizing: border-box;
-        }
-        
-        /* New 2-Column Grid for Modals */
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .full-width { grid-column: span 2; }
-        
-        /* Progress Bar Styles */
-        .progress-container { display: none; width: 100%; background-color: #e9ecef; border-radius: 5px; margin-top: 15px; overflow: hidden; }
-        .progress-bar { width: 0%; height: 15px; background-color: #28a745; transition: width 0.3s ease; }
-        .progress-text { font-size: 12px; text-align: center; color: #333; font-weight: bold; margin-top: 5px; }
-        .btn { padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btn-primary { background: #007bff; }
-        .btn-danger { background: #dc3545; }
-        .btn-warning { background: #ffc107; color: #333; }
-        .btnx { background: #0e9db3; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        .btnx:hover { background: #0b7a8c; }
-        .btn:hover { opacity: 0.9; }
-
-        /* Custom Notification Toast */
-        #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 12px; position: fixed; z-index: 2000; right: 30px; bottom: 30px; font-size: 14px; }
-        #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
-        @keyframes fadein { from {bottom: 0; opacity: 0;} to {bottom: 30px; opacity: 1;} }
-        @keyframes fadeout { from {bottom: 30px; opacity: 1;} to {bottom: 0; opacity: 0;} }
+      * { box-sizing: border-box; font-family: "Segoe UI", sans-serif; }
+      a { text-decoration: none; color: inherit; }
+      body { background: #f4f7f6; margin: 0; padding: 20px; }
+      .header { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 15px 25px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); }
+      .filters { margin: 20px 0; display: flex; gap: 10px; flex-wrap: wrap; position: sticky; top: 0; background: #f4f7f6; padding: 15px 0; z-index: 100; border-bottom: 1px solid #ddd; }
+      .filters button { padding: 8px 15px; border: none; background: #ddd; cursor: pointer; border-radius: 4px; font-weight: bold; transition: 0.3s; }
+      .filters button:hover { background: #bbb; }
+      .filters button.active { background: #007bff; color: white; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; }
+      .search-container { display: flex; align-items: center; gap: 10px; }
+      .search-input-wrapper { position: relative; }
+      .search-input { display: none; padding: 8px 12px; border: 1px solid #ccc; border-radius: 20px; width: 250px; outline: none; transition: 0.3s; }
+      .search-input.show { display: block; }
+      .search-btn { background: none; border: none; font-size: 20px; cursor: pointer; padding: 5px; }
+      .suggestions { display: none; position: absolute; top: 100%; left: 0; width: 100%; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); max-height: 200px; overflow-y: auto; z-index: 1000; margin-top: 5px; }
+      .suggestion-item { padding: 10px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; color: #333; }
+      .suggestion-item:hover { background: #f4f7f6; }
+      .card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); cursor: pointer; transition: 0.2s; }
+      .card:hover { transform: translateY(-3px); }
+      .card img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #007bff; }
+      .card h3 { margin: 5px 0; font-size: 16px; color: #333; }
+      .card p { margin: 3px 0; font-size: 13px; color: #666; }
+      .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); justify-content: center; align-items: center; }
+      .modal-content { background: white; padding: 25px; border-radius: 8px; width: 550px; max-height: 90vh; overflow-y: auto; position: relative; }
+      .close { position: absolute; right: 15px; top: 10px; font-size: 22px; cursor: pointer; }
+      .form-group { margin-bottom: 12px; }
+      .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; color: #333; }
+      .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+      .dynamic-textarea { width: 100%; min-height: 38px; field-sizing: content; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: none; line-height: 1.4; box-sizing: border-box; }
+      .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+      .full-width { grid-column: span 2; }
+      .progress-container { display: none; width: 100%; background-color: #e9ecef; border-radius: 5px; margin-top: 15px; overflow: hidden; }
+      .progress-bar { width: 0%; height: 15px; background-color: #28a745; transition: width 0.3s ease; }
+      .progress-text { font-size: 12px; text-align: center; color: #333; font-weight: bold; margin-top: 5px; }
+      .btn { padding: 8px 15px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      .btn-primary { background: #007bff; }
+      .btn-danger { background: #dc3545; }
+      .btn-warning { background: #ffc107; color: #333; }
+      .btnx { background: #0e9db3; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+      .btnx:hover { background: #0b7a8c; }
+      .btn:hover { opacity: 0.9; }
+      #toast { visibility: hidden; min-width: 250px; background-color: #333; color: #fff; text-align: center; border-radius: 4px; padding: 12px; position: fixed; z-index: 2000; right: 30px; bottom: 30px; font-size: 14px; }
+      #toast.show { visibility: visible; animation: fadein 0.5s, fadeout 0.5s 2.5s; }
+      @keyframes fadein { from { bottom: 0; opacity: 0; } to { bottom: 30px; opacity: 1; } }
+      @keyframes fadeout { from { bottom: 30px; opacity: 1; } to { bottom: 0; opacity: 0; } }
     </style>
-</head>
-<body>
-
-<div class="header">
-    <h2>Employee Directory</h2>
-    <div class="search-container">
+  </head>
+  <body>
+    <div class="header">
+      <h2>Employee Directory</h2>
+      <div class="search-container">
         <div class="search-input-wrapper">
-            <input type="text" id="searchInput" class="search-input" placeholder="Search Name or Code..." oninput="showSuggestions()" autocomplete="off">
-            <div id="suggestionBox" class="suggestions"></div>
+          <input type="text" id="searchInput" class="search-input" placeholder="Search Name or Code..." oninput="showSuggestions()" autocomplete="off" />
+          <div id="suggestionBox" class="suggestions"></div>
         </div>
         <button class="search-btn" onclick="toggleSearch()" title="Search">🔍</button>
         <button class="btn" onclick="openAddModal()">+ Add New Staff</button>
-        <button class="btn" style="background: #16a34a;" onclick="exportStaffToExcel()" title="Export all staff to Excel">📊 Export Excel</button>
-        <button class="btnx" onclick="window.location.href='../staff_salary/'">Staff Salary</button>
-        <button class="btn btn-primary" onclick="window.location.href='../admin/index.html'">Admin Panel</button>
+        <button class="btn" style="background: #16a34a" onclick="exportStaffToExcel()" title="Export all staff to Excel">📊 Export Excel</button>
+        <button class="btnx" onclick="window.location.href = '../staff_salary/'">Staff Salary</button>
+        <button class="btn btn-primary" onclick="window.location.href = '../admin/index.html'">Admin Panel</button>
+      </div>
     </div>
-</div>
 
-<div class="filters">
-    <button class="active" onclick="filterStaff('All', this)">All <span id="count-All">(0)</span></button>
-    <button onclick="filterStaff('Director', this)">Directors <span id="count-Director">(0)</span></button>
-    <button onclick="filterStaff('Site Co', this)">Site Co <span id="count-SiteCo">(0)</span></button>
-    <button onclick="filterStaff('Field Co', this)">Field Co <span id="count-FieldCo">(0)</span></button>
-    <button onclick="filterStaff('Office Staff', this)">Office Staff <span id="count-OfficeAdmin">(0)</span></button>
-    <button onclick="filterStaff('Office Accounts', this)">Office Accounts <span id="count-OfficeAccounts">(0)</span></button>
-    <button onclick="filterStaff('Released', this)" style="background: #dc3545; color: white;">Released <span id="count-Released">(0)</span></button>
-</div>
+    <div class="filters">
+      <button class="active" onclick="filterStaff('All', this)">All <span id="count-All">(0)</span></button>
+      <button onclick="filterStaff('Director', this)">Directors <span id="count-Director">(0)</span></button>
+      <button onclick="filterStaff('Site Co', this)">Site Co <span id="count-SiteCo">(0)</span></button>
+      <button onclick="filterStaff('Field Co', this)">Field Co <span id="count-FieldCo">(0)</span></button>
+      <button onclick="filterStaff('Business Co', this)">Business Co <span id="count-BusinessCo">(0)</span></button>
+      <button onclick="filterStaff('Office Staff', this)">Office Staff <span id="count-OfficeAdmin">(0)</span></button>
+      <button onclick="filterStaff('Office Accounts', this)">Office Accounts <span id="count-OfficeAccounts">(0)</span></button>
+      <button onclick="filterStaff('Released', this)" style="background: #dc3545; color: white">Released <span id="count-Released">(0)</span></button>
+    </div>
 
-<div id="staffContainer"></div>
+    <div id="staffContainer"></div>
 
-<!-- CUSTOM MODAL -->
-<div id="staffModal" class="modal">
-    <div class="modal-content">
+    <div id="staffModal" class="modal">
+      <div class="modal-content">
         <span class="close" onclick="closeModal()">&times;</span>
         <div id="modalBody"></div>
+      </div>
     </div>
-</div>
 
-<!-- TOAST NOTIFICATION -->
-<div id="toast"></div>
+    <div id="toast"></div>
 
-<script>
-    const user = localStorage.getItem('emp_user');
-    if (!user) {
-        window.location.href = '../index.html?redirect=' + encodeURIComponent(window.location.href); 
-    }
+    <script>
+      const user = localStorage.getItem("emp_user");
+      if (!user) { window.location.href = "../index.html?redirect=" + encodeURIComponent(window.location.href); }
 
-    let allEmployeesData = []; 
+      let allEmployeesData = [];
+      document.addEventListener("DOMContentLoaded", () => fetchAllStaff());
 
-    document.addEventListener('DOMContentLoaded', () => fetchAllStaff());
-
-    function showToast(message) {
+      function showToast(message) {
         const toast = document.getElementById("toast");
         toast.className = "show";
         toast.innerText = message;
         setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
-    }
+      }
 
-    function formatDate(dateStr) {
-        if (!dateStr) return 'N/A';
+      function formatDate(dateStr) {
+        if (!dateStr) return "N/A";
         const d = new Date(dateStr);
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        return `${d.getFullYear()} ${months[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`;
-    }
+        return `${d.getFullYear()} ${months[d.getMonth()]} ${String(d.getDate()).padStart(2, "0")}`;
+      }
 
-    function toInputDate(dateStr) {
-        if (!dateStr) return '';
+      function toInputDate(dateStr) {
+        if (!dateStr) return "";
         const d = new Date(dateStr);
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
 
-    async function fetchAllStaff() {
+      async function fetchAllStaff() {
         const res = await fetch(`/api/employee-tracker/all?category=All`);
         const data = await res.json();
         if (data.success) {
-            allEmployeesData = data.employees;
-            updateCounts();  
-            renderStaff('All');
+          allEmployeesData = data.employees;
+          updateCounts();
+          renderStaff("All");
         }
-    }
+      }
 
-    function updateCounts() {
-        const counts = { 'All': allEmployeesData.length, 'Director': 0, 'Site Co': 0, 'Field Co': 0, 'Office Staff': 0, 'Office Accounts': 0, 'Released': 0 };
-        allEmployeesData.forEach(emp => {
-            const cat = (emp.category === 'Office Admin') ? 'Office Staff' : emp.category;
-            if (counts[cat] !== undefined) {
-                counts[cat]++;
-            }
+      function updateCounts() {
+        const counts = { All: allEmployeesData.length, Director: 0, "Site Co": 0, "Field Co": 0, "Business Co": 0, "Office Staff": 0, "Office Accounts": 0, Released: 0 };
+        allEmployeesData.forEach((emp) => {
+          const cat = emp.category === "Office Admin" ? "Office Staff" : emp.category;
+          if (counts[cat] !== undefined) { counts[cat]++; }
         });
-        document.getElementById('count-All').innerText = `(${counts['All']})`;
-        document.getElementById('count-Director').innerText = `(${counts['Director']})`;
-        document.getElementById('count-SiteCo').innerText = `(${counts['Site Co']})`;
-        document.getElementById('count-FieldCo').innerText = `(${counts['Field Co']})`;
-        document.getElementById('count-OfficeAdmin').innerText = `(${counts['Office Staff']})`;
-        document.getElementById('count-OfficeAccounts').innerText = `(${counts['Office Accounts']})`;
-        document.getElementById('count-Released').innerText = `(${counts['Released']})`;
-    }
+        document.getElementById("count-All").innerText = `(${counts["All"]})`;
+        document.getElementById("count-Director").innerText = `(${counts["Director"]})`;
+        document.getElementById("count-SiteCo").innerText = `(${counts["Site Co"]})`;
+        document.getElementById("count-FieldCo").innerText = `(${counts["Field Co"]})`;
+        document.getElementById("count-BusinessCo").innerText = `(${counts["Business Co"]})`;
+        document.getElementById("count-OfficeAdmin").innerText = `(${counts["Office Staff"]})`;
+        document.getElementById("count-OfficeAccounts").innerText = `(${counts["Office Accounts"]})`;
+        document.getElementById("count-Released").innerText = `(${counts["Released"]})`;
+      }
 
-    async function loadStaff() {
-        await fetchAllStaff();
-    }
+      async function loadStaff() { await fetchAllStaff(); }
 
-    function filterStaff(category, btn) {
-        document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
-        if(btn) btn.classList.add('active');
-        document.getElementById('searchInput').value = '';
-        document.getElementById('suggestionBox').style.display = 'none';
+      function filterStaff(category, btn) {
+        document.querySelectorAll(".filters button").forEach((b) => b.classList.remove("active"));
+        if (btn) btn.classList.add("active");
+        document.getElementById("searchInput").value = "";
+        document.getElementById("suggestionBox").style.display = "none";
         renderStaff(category);
-    }
+      }
 
-    function renderStaff(filterCategory, specificData = null) {
-        const container = document.getElementById('staffContainer');
-        container.innerHTML = '';
-        
+      function renderStaff(filterCategory, specificData = null) {
+        const container = document.getElementById("staffContainer");
+        container.innerHTML = "";
+
         let displayData = specificData ? specificData : allEmployeesData;
-        if (filterCategory !== 'All' && !specificData) {
-            displayData = displayData.filter(emp => emp.category === filterCategory);
+        if (filterCategory !== "All" && !specificData) {
+          displayData = displayData.filter((emp) => emp.category === filterCategory);
         }
         if (displayData.length === 0) {
-            container.innerHTML = '<p style="padding:20px; font-weight:bold; color:#dc3545;">No staff found in this section.</p>';
-            return;
+          container.innerHTML = '<p style="padding:20px; font-weight:bold; color:#dc3545;">No staff found in this section.</p>';
+          return;
         }
 
-        const categories = ['Director', 'Site Co', 'Field Co', 'Office Staff', 'Office Accounts', 'Released'];
+        const categories = ["Director", "Site Co", "Field Co", "Business Co", "Office Staff", "Office Accounts", "Released"];
         const grouped = {};
-        categories.forEach(c => grouped[c] = []);
+        categories.forEach((c) => (grouped[c] = []));
 
-        displayData.forEach(emp => {
-            // Office Admin ആണെങ്കിൽ പോലും Office Staff ആയി ഗ്രൂപ്പ് ചെയ്യുന്നു
-            const cat = (emp.category === 'Office Admin') ? 'Office Staff' : emp.category;
-            if(grouped[cat] !== undefined) {
-                grouped[cat].push(emp);
-            } else {
-                grouped[cat] = [emp];
-            }
+        displayData.forEach((emp) => {
+          const cat = emp.category === "Office Admin" ? "Office Staff" : emp.category;
+          if (grouped[cat] !== undefined) { grouped[cat].push(emp); } else { grouped[cat] = [emp]; }
         });
 
         for (const [cat, emps] of Object.entries(grouped)) {
-            if (emps && emps.length > 0) {
-                emps.sort((a, b) => (a.unique_id || '').localeCompare(b.unique_id || ''));
-                let sectionHtml = `
-                    <div class="category-section" style="margin-bottom: 40px;">
-                        <h3 style="color: #2c3e50; border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">${cat}</h3>
-                        <div class="grid">
-                `;
-                emps.forEach(emp => {
-                    const siteInfo = emp.site_name ? `<p style="color:#0284c7; font-weight:600;">📍 ${emp.site_name}</p>` : '';
-                    const vehicleInfo = (emp.vehicle_model || emp.plate_no) ? `<p style="font-size:12px; color:#475569;">🚗 ${emp.vehicle_model || ''} ${emp.plate_no ? `(${emp.plate_no})` : ''}</p>` : '';
-
-                    sectionHtml += `
-                        <div class="card" onclick="viewDetails(${emp.id})">
-                            <img src="${emp.image_path || 'https://via.placeholder.com/80'}" alt="Staff">
+          if (emps && emps.length > 0) {
+            emps.sort((a, b) => (a.unique_id || "").localeCompare(b.unique_id || ""));
+            let sectionHtml = `<div class="category-section" style="margin-bottom: 40px;"><h3 style="color: #2c3e50; border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">${cat}</h3><div class="grid">`;
+            emps.forEach((emp) => {
+              const siteInfo = emp.site_name ? `<p style="color:#0284c7; font-weight:600;">📍 ${emp.site_name}</p>` : "";
+              const vehicleInfo = emp.vehicle_model || emp.plate_no ? `<p style="font-size:12px; color:#475569;">🚗 ${emp.vehicle_model || ""} ${emp.plate_no ? `(${emp.plate_no})` : ""}</p>` : "";
+              sectionHtml += `<div class="card" onclick="viewDetails(${emp.id})">
+                            <img src="${emp.image_path || "https://via.placeholder.com/80"}" alt="Staff">
                             <h3>${emp.name}</h3>
                             <p><b>${emp.unique_id}</b></p>
                             <p>${emp.designation || emp.category}</p>
                             ${siteInfo}
                             ${vehicleInfo}
-                            <p>📞 ${emp.mobile || 'N/A'}</p>
-                        </div>
-                    `;
-                });
-                sectionHtml += `</div></div>`;
-                container.innerHTML += sectionHtml;
-            }
-        }
-    }
-
-    function toggleSearch() {
-        const input = document.getElementById('searchInput');
-        input.classList.toggle('show');
-        if (input.classList.contains('show')) {
-            input.focus();
-        } else {
-            input.value = '';
-            document.getElementById('suggestionBox').style.display = 'none';
-            const activeBtn = document.querySelector('.filters button.active');
-            const cat = activeBtn ? (activeBtn.innerText === 'Directors' ? 'Director' : activeBtn.innerText) : 'All';
-            renderStaff(cat);
-        }
-    }
-
-    function showSuggestions() {
-        const val = document.getElementById('searchInput').value.toLowerCase();
-        const box = document.getElementById('suggestionBox');
-        box.innerHTML = '';
-        
-        if (!val) {
-            box.style.display = 'none';
-            const activeBtn = document.querySelector('.filters button.active');
-            const cat = activeBtn ? (activeBtn.innerText === 'Directors' ? 'Director' : activeBtn.innerText) : 'All';
-            renderStaff(cat);
-            return;
-        }
-
-        const matches = allEmployeesData.filter(emp => 
-            (emp.name || '').toLowerCase().includes(val) || 
-            (emp.unique_id || '').toLowerCase().includes(val)
-        );
-
-        if (matches.length > 0) {
-            matches.forEach(emp => {
-                const div = document.createElement('div');
-                div.className = 'suggestion-item';
-                div.innerHTML = `<b>${emp.unique_id}</b> - ${emp.name}`;
-                div.onclick = () => {
-                    document.getElementById('searchInput').value = emp.name;
-                    box.style.display = 'none';
-                    renderStaff('All', [emp]); 
-                };
-                box.appendChild(div);
+                            <p>📞 ${emp.mobile || "N/A"}</p>
+                        </div>`;
             });
-            box.style.display = 'block';
-        } else {
-            box.style.display = 'none';
+            sectionHtml += `</div></div>`;
+            container.innerHTML += sectionHtml;
+          }
         }
-        renderStaff('All', matches);
-    }
+      }
 
-    function openAddModal() {
+      function toggleSearch() {
+        const input = document.getElementById("searchInput");
+        input.classList.toggle("show");
+        if (input.classList.contains("show")) { input.focus(); } else {
+          input.value = "";
+          document.getElementById("suggestionBox").style.display = "none";
+          const activeBtn = document.querySelector(".filters button.active");
+          const cat = activeBtn ? activeBtn.innerText === "Directors" ? "Director" : activeBtn.innerText : "All";
+          renderStaff(cat);
+        }
+      }
+
+      function showSuggestions() {
+        const val = document.getElementById("searchInput").value.toLowerCase();
+        const box = document.getElementById("suggestionBox");
+        box.innerHTML = "";
+        if (!val) {
+          box.style.display = "none";
+          const activeBtn = document.querySelector(".filters button.active");
+          const cat = activeBtn ? activeBtn.innerText === "Directors" ? "Director" : activeBtn.innerText : "All";
+          renderStaff(cat);
+          return;
+        }
+
+        const matches = allEmployeesData.filter((emp) => (emp.name || "").toLowerCase().includes(val) || (emp.unique_id || "").toLowerCase().includes(val));
+        if (matches.length > 0) {
+          matches.forEach((emp) => {
+            const div = document.createElement("div");
+            div.className = "suggestion-item";
+            div.innerHTML = `<b>${emp.unique_id}</b> - ${emp.name}`;
+            div.onclick = () => {
+              document.getElementById("searchInput").value = emp.name;
+              box.style.display = "none";
+              renderStaff("All", [emp]);
+            };
+            box.appendChild(div);
+          });
+          box.style.display = "block";
+        } else { box.style.display = "none"; }
+        renderStaff("All", matches);
+      }
+
+      function openAddModal() {
         stagedDocuments = [];
-        document.getElementById('modalBody').innerHTML = `
+        document.getElementById("modalBody").innerHTML = `
             <h2>Add New Staff</h2>
             <form id="addStaffForm" onsubmit="submitStaff(event)">
                 <div class="form-row">
@@ -305,18 +254,40 @@
                             <option value="Director">Director</option>
                             <option value="Site Co">Site Co</option>
                             <option value="Field Co">Field Co</option>
+                            <option value="Business Co">Business Co</option>
                             <option value="Office Staff">Office Staff</option>
                             <option value="Office Accounts">Office Accounts</option>
                         </select>
                     </div>
                     <div class="form-group" id="addSiteNameBox" style="display:none;"><label>Site Name</label><input type="text" name="site_name" placeholder="e.g. Bisha, Afif"></div>
+                    <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" required></div>
+                    <div class="form-group"><label>Department</label><input type="text" name="department" placeholder="e.g. Operations, IT"></div>
                     <div class="form-group"><label>Designation</label>
                         <select name="designation" id="addDesignationSelect" onchange="handleDesignationChange(this, 'addCategorySelect')"></select>
                     </div>
-                    <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" required></div>
+                    
+                    <div class="form-group"><label>Working Country</label>
+                        <select name="country" onchange="toggleKsaFields(this.value, 'addKsaBox')">
+                            <option value="Kingdom of Saudi Arabia" selected>Kingdom of Saudi Arabia</option>
+                            <option value="India">India</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Passport No</label><input type="text" name="passport_no"></div>
+
+                    <!-- KSA Specific Details Box -->
+                    <div id="addKsaBox" class="full-width" style="display:block; background:#f1f5f9; padding:15px; border-radius:5px; border:1px solid #cbd5e1;">
+                        <h4 style="margin:0 0 10px 0; color:#334155;">KSA Documents</h4>
+                        <div class="form-row">
+                            <div class="form-group"><label>IQAMA No</label><input type="text" name="iqama_no"></div>
+                            <div class="form-group"><label>IQAMA Expiry</label><input type="date" name="iqama_expiry"></div>
+                            <div class="form-group"><label>Licence Expiry</label><input type="date" name="licence_expiry"></div>
+                            <div class="form-group"><label>Health Ins. Expiry</label><input type="date" name="health_insurance_expiry"></div>
+                            <div class="form-group full-width"><label>Sponsor Name</label><input type="text" name="sponsor_name"></div>
+                        </div>
+                    </div>
+
                     <div class="form-group"><label>Mobile No</label><input type="text" name="mobile"></div>
                     <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile"></div>
-                    <div class="form-group"><label>Passport No</label><input type="text" name="passport_no"></div>
                     <div class="form-group"><label>Address</label><textarea name="address" class="dynamic-textarea" placeholder="Address..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea></div>
                     <div class="form-group"><label>Notes</label><textarea name="notes" class="dynamic-textarea" placeholder="Notes..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea></div>
                     <div class="form-group full-width"><label>Staff Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
@@ -332,7 +303,15 @@
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Emergency Contact</h4>
                 <div class="form-row">
                     <div class="form-group"><label>Name</label><input type="text" name="emergency_name"></div>
-                    <div class="form-group"><label>Relationship</label><input type="text" name="emergency_relation"></div>
+                    <div class="form-group"><label>Relationship</label>
+                        <input list="relationList" name="emergency_relation" placeholder="Select or type...">
+                        <datalist id="relationList">
+                            <option value="Father"></option>
+                            <option value="Mother"></option>
+                            <option value="Spouse"></option>
+                            <option value="Friend"></option>
+                        </datalist>
+                    </div>
                     <div class="form-group"><label>Mobile</label><input type="text" name="emergency_mobile"></div>
                     <div class="form-group"><label>Alt Mobile</label><input type="text" name="emergency_alt"></div>
                 </div>
@@ -357,42 +336,42 @@
             </form>
         `;
         renderStagedDocuments();
-        document.getElementById('staffModal').style.display = 'flex';
+        document.getElementById("staffModal").style.display = "flex";
 
-        // 🟢 Add options initialization
-        toggleSiteNameField('addCategorySelect', 'addSiteNameBox');
-        updateDesignationOptions('addCategorySelect', 'addDesignationSelect');
-    }
+        toggleSiteNameField("addCategorySelect", "addSiteNameBox");
+        updateDesignationOptions("addCategorySelect", "addDesignationSelect");
+      }
 
-    async function openEditModal(id) {
+      async function openEditModal(id) {
         stagedDocuments = [];
         const res = await fetch(`/api/employee-tracker/details/${id}`);
         const data = await res.json();
         if (!data.success) return;
 
         const emp = data.employee;
-        const docs = data.documents || []; 
+        const docs = data.documents || [];
 
         window.currentEmpCategory = emp.category;
-        window.currentEmpSiteName = (emp.site_name || '').trim();
+        window.currentEmpSiteName = (emp.site_name || "").trim();
 
-        document.getElementById('modalBody').innerHTML = `
+        document.getElementById("modalBody").innerHTML = `
             <h2>Edit Staff (${emp.unique_id})</h2>
             <form id="editStaffForm" onsubmit="updateStaff(event, ${emp.id})">
                 <div class="form-row">
-                    <div class="form-group"><label>Full Name</label><input type="text" name="name" value="${emp.name || ''}" required></div>
+                    <div class="form-group"><label>Full Name</label><input type="text" name="name" value="${emp.name || ""}" required></div>
                     <div class="form-group"><label>Division / Category</label>
                         <select name="category" id="categorySelect" onchange="toggleSiteNameField('categorySelect', 'editSiteNameBox'); updateDesignationOptions('categorySelect', 'editDesignationSelect'); checkRoleOrSiteChange();" required>
-                            <option value="Director" ${emp.category === 'Director' ? 'selected' : ''}>Director</option>
-                            <option value="Site Co" ${emp.category === 'Site Co' ? 'selected' : ''}>Site Co</option>
-                            <option value="Field Co" ${emp.category === 'Field Co' ? 'selected' : ''}>Field Co</option>
-                            <option value="Office Staff" ${(emp.category === 'Office Staff' || emp.category === 'Office Admin') ? 'selected' : ''}>Office Staff</option>
-                            <option value="Office Accounts" ${emp.category === 'Office Accounts' ? 'selected' : ''}>Office Accounts</option>
-                            <option value="Released" ${emp.category === 'Released' ? 'selected' : ''}>Released</option>
+                            <option value="Director" ${emp.category === "Director" ? "selected" : ""}>Director</option>
+                            <option value="Site Co" ${emp.category === "Site Co" ? "selected" : ""}>Site Co</option>
+                            <option value="Field Co" ${emp.category === "Field Co" ? "selected" : ""}>Field Co</option>
+                            <option value="Business Co" ${emp.category === "Business Co" ? "selected" : ""}>Business Co</option>
+                            <option value="Office Staff" ${emp.category === "Office Staff" || emp.category === "Office Admin" ? "selected" : ""}>Office Staff</option>
+                            <option value="Office Accounts" ${emp.category === "Office Accounts" ? "selected" : ""}>Office Accounts</option>
+                            <option value="Released" ${emp.category === "Released" ? "selected" : ""}>Released</option>
                         </select>
                     </div>
-                    <div class="form-group" id="editSiteNameBox" style="${emp.category === 'Site Co' ? 'display:block;' : 'display:none;'}">
-                        <label>Site Name</label><input type="text" name="site_name" id="siteNameInput" value="${emp.site_name || ''}" oninput="checkRoleOrSiteChange()" placeholder="e.g. Bisha, Afif">
+                    <div class="form-group" id="editSiteNameBox" style="${emp.category === "Site Co" ? "display:block;" : "display:none;"}">
+                        <label>Site Name</label><input type="text" name="site_name" id="siteNameInput" value="${emp.site_name || ""}" oninput="checkRoleOrSiteChange()" placeholder="e.g. Bisha, Afif">
                     </div>
                     
                     <div id="roleChangeBox" class="full-width" style="display:none; background:#fff3cd; padding:10px; border-radius:5px; border:1px solid #ffeeba;">
@@ -403,27 +382,48 @@
                         </div>
                     </div>
                     
-                    <div id="releasedBox" class="full-width" style="display:${emp.category === 'Released' ? 'block' : 'none'}; background:#f8d7da; padding:10px; border-radius:5px; border:1px solid #f5c6cb;">
-                        <div class="form-group"><label style="color:#721c24;">Released Date</label><input type="date" name="released_date" id="released_date" value="${toInputDate(emp.released_date) || ''}"></div>
+                    <div id="releasedBox" class="full-width" style="display:${emp.category === "Released" ? "block" : "none"}; background:#f8d7da; padding:10px; border-radius:5px; border:1px solid #f5c6cb;">
+                        <div class="form-group"><label style="color:#721c24;">Released Date</label><input type="date" name="released_date" id="released_date" value="${toInputDate(emp.released_date) || ""}"></div>
                     </div>
 
+                    <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" value="${toInputDate(emp.joining_date)}" required></div>
+                    <div class="form-group"><label>Department</label><input type="text" name="department" value="${emp.department || ""}" placeholder="e.g. Operations, IT"></div>
                     <div class="form-group"><label>Designation</label>
                         <select name="designation" id="editDesignationSelect" onchange="handleDesignationChange(this, 'categorySelect')"></select>
                     </div>
-                    <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" value="${toInputDate(emp.joining_date)}" required></div>
-                    <div class="form-group"><label>Mobile No</label><input type="text" name="mobile" value="${emp.mobile || ''}"></div>
-                    <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile" value="${emp.alt_mobile || ''}"></div>
-                    <div class="form-group"><label>Passport No</label><input type="text" name="passport_no" value="${emp.passport_no || ''}"></div>
-                    <div class="form-group"><label>Address</label><textarea name="address" class="dynamic-textarea" placeholder="Address..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.address || ''}</textarea></div>
-                    <div class="form-group"><label>Notes</label><textarea name="notes" class="dynamic-textarea" placeholder="Notes..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.notes || ''}</textarea></div>
+                    
+                    <div class="form-group"><label>Working Country</label>
+                        <select name="country" onchange="toggleKsaFields(this.value, 'editKsaBox')">
+                            <option value="Kingdom of Saudi Arabia" ${emp.country === 'Kingdom of Saudi Arabia' || emp.country === 'KSA' || !emp.country ? 'selected' : ''}>Kingdom of Saudi Arabia</option>
+                            <option value="India" ${emp.country === 'India' ? 'selected' : ''}>India</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Passport No</label><input type="text" name="passport_no" value="${emp.passport_no || ""}"></div>
+
+                    <!-- KSA Specific Details Box -->
+                    <div id="editKsaBox" class="full-width" style="display:${emp.country === 'India' ? 'none' : 'block'}; background:#f1f5f9; padding:15px; border-radius:5px; border:1px solid #cbd5e1;">
+                        <h4 style="margin:0 0 10px 0; color:#334155;">KSA Documents</h4>
+                        <div class="form-row">
+                            <div class="form-group"><label>IQAMA No</label><input type="text" name="iqama_no" value="${emp.iqama_no || ""}"></div>
+                            <div class="form-group"><label>IQAMA Expiry</label><input type="date" name="iqama_expiry" value="${toInputDate(emp.iqama_expiry)}"></div>
+                            <div class="form-group"><label>Licence Expiry</label><input type="date" name="licence_expiry" value="${toInputDate(emp.licence_expiry)}"></div>
+                            <div class="form-group"><label>Health Ins. Expiry</label><input type="date" name="health_insurance_expiry" value="${toInputDate(emp.health_insurance_expiry)}"></div>
+                            <div class="form-group full-width"><label>Sponsor Name</label><input type="text" name="sponsor_name" value="${emp.sponsor_name || ""}"></div>
+                        </div>
+                    </div>
+
+                    <div class="form-group"><label>Mobile No</label><input type="text" name="mobile" value="${emp.mobile || ""}"></div>
+                    <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile" value="${emp.alt_mobile || ""}"></div>
+                    <div class="form-group"><label>Address</label><textarea name="address" class="dynamic-textarea" placeholder="Address..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.address || ""}</textarea></div>
+                    <div class="form-group"><label>Notes</label><textarea name="notes" class="dynamic-textarea" placeholder="Notes..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.notes || ""}</textarea></div>
                     <div class="form-group full-width"><label>Update Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
                 </div>
 
                 <!-- VEHICLE SECTION IN EDIT -->
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Vehicle Provided Details</h4>
                 <div class="form-row">
-                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" value="${emp.vehicle_model || ''}"></div>
-                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" value="${emp.plate_no || ''}"></div>
+                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" value="${emp.vehicle_model || ""}"></div>
+                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" value="${emp.plate_no || ""}"></div>
                     <div class="form-group"><label>Received Date</label><input type="date" name="vehicle_purchase_date" value="${toInputDate(emp.vehicle_purchase_date)}"></div>
                     
                     <div class="form-group">
@@ -452,30 +452,42 @@
 
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Emergency Contact</h4>
                 <div class="form-row">
-                    <div class="form-group"><label>Name</label><input type="text" name="emergency_name" value="${emp.emergency_name || ''}"></div>
-                    <div class="form-group"><label>Relationship</label><input type="text" name="emergency_relation" value="${emp.emergency_relation || ''}"></div>
-                    <div class="form-group"><label>Mobile</label><input type="text" name="emergency_mobile" value="${emp.emergency_mobile || ''}"></div>
-                    <div class="form-group"><label>Alt Mobile</label><input type="text" name="emergency_alt" value="${emp.emergency_alt || ''}"></div>
+                    <div class="form-group"><label>Name</label><input type="text" name="emergency_name" value="${emp.emergency_name || ""}"></div>
+                    <div class="form-group"><label>Relationship</label>
+                        <input list="editRelationList" name="emergency_relation" placeholder="Select or type..." value="${emp.emergency_relation || ""}">
+                        <datalist id="editRelationList">
+                            <option value="Father"></option>
+                            <option value="Mother"></option>
+                            <option value="Spouse"></option>
+                            <option value="Friend"></option>
+                        </datalist>
+                    </div>
+                    <div class="form-group"><label>Mobile</label><input type="text" name="emergency_mobile" value="${emp.emergency_mobile || ""}"></div>
+                    <div class="form-group"><label>Alt Mobile</label><input type="text" name="emergency_alt" value="${emp.emergency_alt || ""}"></div>
                 </div>
 
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Manage & Remove Documents</h4>
-                ${docs.length > 0 ? `
+                ${
+                  docs.length > 0
+                    ? `
                     <div style="background:#e9ecef; padding:10px; border-radius:5px; margin-bottom:12px;">
                         <label style="font-weight:600; font-size:13px; margin-bottom:5px; display:block; color:#333;">Existing Documents (Click ✖ to Remove)</label>
                         <ul style="list-style:none; padding:0; margin:0;">
-                            ${docs.map((d) => {
-                                const fileName = (d.file_path || '').split('/').pop();
+                            ${docs
+                              .map((d) => {
+                                const fileName = (d.file_path || "").split("/").pop();
                                 const match = fileName.match(/-(\d+)\.[^.]+$/);
-                                const actualDocNumber = match ? parseInt(match[1], 10) : '';
+                                const actualDocNumber = match ? parseInt(match[1], 10) : "";
                                 return `
                                     <li style="display:flex; justify-content:space-between; background:#fff; padding:6px 10px; margin-bottom:4px; border-radius:4px; font-size:13px; align-items:center; border:1px solid #ddd;">
                                         <span><a href="${d.file_path}" target="_blank">${d.doc_name}</a> <small>(${actualDocNumber})</small></span>
                                         <button type="button" style="color:#dc3545; border:none; background:none; cursor:pointer; font-weight:bold; font-size:16px;" onclick="deleteExistingDocument(${d.id}, ${emp.id})">✖</button>
                                     </li>`;
-                            }).join('')}
+                              }).join("")}
                         </ul>
                     </div>
-                ` : '<p style="font-size:13px; color:#666;">No documents attached yet.</p>'}
+                ` : '<p style="font-size:13px; color:#666;">No documents attached yet.</p>'
+                }
 
                 <div class="form-row">
                     <div class="form-group full-width">
@@ -510,116 +522,86 @@
                 <button type="submit" id="updateBtn" class="btn btn-warning" style="width:100%; margin-top:15px;">Update Staff</button>
             </form>
         `;
-        
-        // 🟢 Edit options initialization with existing data
-        toggleSiteNameField('categorySelect', 'editSiteNameBox');
-        updateDesignationOptions('categorySelect', 'editDesignationSelect', emp.designation || '');
+
+        toggleSiteNameField("categorySelect", "editSiteNameBox");
+        updateDesignationOptions("categorySelect", "editDesignationSelect", emp.designation || "");
         checkRoleOrSiteChange();
-    }
+      }
 
-    function toggleVehicleAction(sel) {
-        const soldBox = document.getElementById('vehSoldBox');
-        const newBox = document.getElementById('vehNewBox');
-        const soldInput = document.getElementById('vehicle_sold_date');
+      function toggleVehicleAction(sel) {
+        const soldBox = document.getElementById("vehSoldBox");
+        const newBox = document.getElementById("vehNewBox");
+        const soldInput = document.getElementById("vehicle_sold_date");
+        if (sel.value === "sold") { soldBox.style.display = "block"; newBox.style.display = "none"; soldInput.required = true; } 
+        else if (sel.value === "replaced") { soldBox.style.display = "block"; newBox.style.display = "block"; soldInput.required = true; } 
+        else if (sel.value === "new_purchase") { soldBox.style.display = "none"; newBox.style.display = "block"; soldInput.required = false; } 
+        else { soldBox.style.display = "none"; newBox.style.display = "none"; soldInput.required = false; }
+      }
 
-        if(sel.value === 'sold') {
-            soldBox.style.display = 'block'; newBox.style.display = 'none';
-            soldInput.required = true;
-        } else if(sel.value === 'replaced') {
-            soldBox.style.display = 'block'; newBox.style.display = 'block';
-            soldInput.required = true;
-        } else if(sel.value === 'new_purchase') {
-            soldBox.style.display = 'none'; newBox.style.display = 'block';
-            soldInput.required = false;
-        } else {
-            soldBox.style.display = 'none'; newBox.style.display = 'none';
-            soldInput.required = false;
-        }
-    }
-
-    function uploadDataWithProgress(url, formData, btnId) {
+      function uploadDataWithProgress(url, formData, btnId) {
         return new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            const progressContainer = document.getElementById('progressContainer');
-            const progressBar = document.getElementById('progressBar');
-            const progressText = document.getElementById('progressText');
-            const btn = document.getElementById(btnId);
+          const xhr = new XMLHttpRequest();
+          const progressContainer = document.getElementById("progressContainer");
+          const progressBar = document.getElementById("progressBar");
+          const progressText = document.getElementById("progressText");
+          const btn = document.getElementById(btnId);
 
-            progressContainer.style.display = 'block';
-            btn.disabled = true;
-            btn.innerText = "Processing...";
+          progressContainer.style.display = "block";
+          btn.disabled = true;
+          btn.innerText = "Processing...";
 
-            xhr.upload.addEventListener("progress", (event) => {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    progressBar.style.width = percentComplete + "%";
-                    progressText.innerText = `Uploading... ${percentComplete}%`;
-                }
-            });
+          xhr.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 100);
+              progressBar.style.width = percentComplete + "%";
+              progressText.innerText = `Uploading... ${percentComplete}%`;
+            }
+          });
 
-            xhr.addEventListener("load", () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    resolve(JSON.parse(xhr.responseText));
-                } else {
-                    reject("Upload Failed");
-                }
-            });
-            
-            xhr.addEventListener("error", () => reject("Network Error"));
-            xhr.open("POST", url);
-            xhr.send(formData);
+          xhr.addEventListener("load", () => {
+            if (xhr.status >= 200 && xhr.status < 300) { resolve(JSON.parse(xhr.responseText)); } 
+            else { reject("Upload Failed"); }
+          });
+
+          xhr.addEventListener("error", () => reject("Network Error"));
+          xhr.open("POST", url);
+          xhr.send(formData);
         });
-    }
+      }
 
-    async function submitStaff(e) {
+      async function submitStaff(e) {
         e.preventDefault();
         const formData = new FormData(e.target);
-        
-        stagedDocuments.forEach(doc => {
-            formData.append('documents', doc.file); 
-            formData.append('doc_names', doc.name);
-        });
-
+        stagedDocuments.forEach((doc) => { formData.append("documents", doc.file); formData.append("doc_names", doc.name); });
         try {
-            const data = await uploadDataWithProgress('/api/employee-tracker/add', formData, 'submitBtn');
-            if (data.success) {
-                showToast("Staff added successfully!");
-                closeModal();
-                loadStaff();
-            } else {
-                showToast("Error: " + data.message);
-            }
-        } catch (err) {
-            showToast("Error connecting to server!");
-        }
-    }
+          const data = await uploadDataWithProgress("/api/employee-tracker/add", formData, "submitBtn");
+          if (data.success) {
+            showToast("Staff added successfully!");
+            closeModal();
+            loadStaff();
+          } else { showToast("Error: " + data.message); }
+        } catch (err) { showToast("Error connecting to server!"); }
+      }
 
-    async function updateStaff(e, id) {
+      async function updateStaff(e, id) {
         e.preventDefault();
         const formData = new FormData(e.target);
-
-        stagedDocuments.forEach(doc => {
-            formData.append('documents', doc.file);
-            formData.append('doc_names', doc.name);
-        });
-
+        stagedDocuments.forEach((doc) => { formData.append("documents", doc.file); formData.append("doc_names", doc.name); });
         try {
-            const data = await uploadDataWithProgress(`/api/employee-tracker/edit/${id}`, formData, 'updateBtn');
-            if (data.success) {
-                showToast("Staff updated successfully!");
-                stagedDocuments = [];
-                closeModal();
-                await loadStaff();
-            } else {
-                showToast("Error: " + data.message);
-            }
+          const data = await uploadDataWithProgress(`/api/employee-tracker/edit/${id}`, formData, "updateBtn");
+          if (data.success) {
+            showToast("Staff updated successfully!");
+            stagedDocuments = [];
+            closeModal();
+            await loadStaff();
+          } else { showToast("Error: " + data.message); }
         } catch (err) {
-            console.error("Update Error:", err);
-            showToast("Error updating data!");
+          console.error("Update Error:", err);
+          showToast("Error updating data!");
         }
-    }
-    
-    async function viewDetails(id) {
+      }
+
+      async function viewDetails(id) {
         const res = await fetch(`/api/employee-tracker/details/${id}`);
         const data = await res.json();
         if (!data.success) return;
@@ -628,107 +610,119 @@
         const history = data.history;
         const vehHistory = data.vehicle_history;
         const docs = data.documents;
-
-        let docSectionHtml = '';
-        if (docs && docs.length > 0) {
-            let docHtml = docs.map((d) => {
-                const fileName = (d.file_path || '').split('/').pop();
-                const match = fileName.match(/-(\d+)\.[^.]+$/);
-                const actualDocNumber = match ? parseInt(match[1], 10) : '';
-                return `<li>${actualDocNumber} &nbsp;&nbsp; <a href="${d.file_path}" target="_blank">${d.doc_name}</a></li>`;
-            }).join('');
-            docSectionHtml = `<h4 style="margin:10px 0 5px 0; color:#007bff;">Attached Documents</h4><ul>${docHtml}</ul>`;
-        }
         
-        let timelineHtml = '';
+        let docSectionHtml = "";
+        if (docs && docs.length > 0) {
+          let docHtml = docs.map((d) => {
+              const fileName = (d.file_path || "").split("/").pop();
+              const match = fileName.match(/-(\d+)\.[^.]+$/);
+              const actualDocNumber = match ? parseInt(match[1], 10) : "";
+              return `<li style="margin-bottom:5px;"><b>${actualDocNumber}.</b> &nbsp;&nbsp; <a href="${d.file_path}" target="_blank" style="text-decoration:none; color:#1c0029; font-weight:500;">${d.doc_name}</a></li>`;
+            }).join("");
+          docSectionHtml = `<h4 style="margin:10px 0 5px 0; color:#007bff;">Attached Documents</h4><ul style="list-style-type: none; padding-left: 0; font-size:14px;">${docHtml}</ul>`;
+        }
+
+        let timelineHtml = "";
         if (history && history.length > 0) {
-            history.forEach(h => {
-                const sitePart = h.previous_site ? ` | Site: ${h.previous_site}` : '';
-                timelineHtml += `<li style="margin-bottom:8px;"><b>${formatDate(h.start_date)} - ${formatDate(h.end_date)}</b> : ${h.previous_category} ${h.previous_designation ? `(${h.previous_designation})` : ''}${sitePart}</li>`;
-            });
+          history.forEach((h) => {
+            const sitePart = h.previous_site ? ` | Site: ${h.previous_site}` : "";
+            const deptPart = h.previous_department ? ` | Dept: ${h.previous_department}` : "";
+            timelineHtml += `<li style="margin-bottom:8px;"><b>${formatDate(h.start_date)} - ${formatDate(h.end_date)}</b> : ${h.previous_category} ${h.previous_designation ? `(${h.previous_designation})` : ""}${deptPart}${sitePart}</li>`;
+          });
         }
-        const curSitePart = emp.site_name ? ` | Site: ${emp.site_name}` : '';
-        timelineHtml += `<li style="margin-bottom:8px; color:green;"><b>${formatDate(emp.joining_date)} - Present</b> : ${emp.category} ${emp.designation ? `(${emp.designation})` : ''}${curSitePart}</li>`;
+        const curSitePart = emp.site_name ? ` | Site: ${emp.site_name}` : "";
+        const curDeptPart = emp.department ? ` | Dept: ${emp.department}` : "";
+        timelineHtml += `<li style="margin-bottom:8px; color:green;"><b>${formatDate(emp.joining_date)} - Present</b> : ${emp.category} ${emp.designation ? `(${emp.designation})` : ""}${curDeptPart}${curSitePart}</li>`;
+        
+        let ksaDetailsHtml = "";
+        if (emp.country !== 'India') {
+            ksaDetailsHtml = `
+            <div style="background:#f1f5f9; padding:10px; border-radius:5px; margin:5px 0; line-height: 1.6; font-size:13px; text-align:left;">
+                <p style="margin:3px 0;"><b>Working Country:</b> Kingdom of Saudi Arabia</p>
+                <p style="margin:3px 0;"><b>IQAMA No:</b> ${emp.iqama_no || "N/A"} (Exp: ${formatDate(emp.iqama_expiry)})</p>
+                <p style="margin:3px 0;"><b>Licence Exp:</b> ${formatDate(emp.licence_expiry)} | <b>Health Ins Exp:</b> ${formatDate(emp.health_insurance_expiry)}</p>
+                <p style="margin:3px 0;"><b>Sponsor Name:</b> ${emp.sponsor_name || "N/A"}</p>
+            </div>`;
+        } else {
+            ksaDetailsHtml = `<p style="margin:5px 0;"><b>Working Country:</b> India</p>`;
+        }
 
-        let vehHtml = '';
+        let vehHtml = "";
         if (vehHistory && vehHistory.length > 0) {
-            vehHistory.forEach(v => {
-                const soldStr = v.status === 'Sold' ? ` | <span style="color:#dc3545">Sold: ${formatDate(v.sold_date)}</span>` : ' | <span style="color:#28a745">(Active)</span>';
-                vehHtml += `<li style="margin-bottom:8px;"><b>${v.plate_no || 'N/A'}</b> (${v.vehicle_model || 'N/A'}) - Purchased: ${formatDate(v.purchase_date)}${soldStr}</li>`;
-            });
+          vehHistory.forEach((v) => {
+            const soldStr = v.status === "Sold" ? ` | <span style="color:#dc3545">Sold: ${formatDate(v.sold_date)}</span>` : ' | <span style="color:#28a745">(Active)</span>';
+            vehHtml += `<li style="margin-bottom:8px;"><b>${v.plate_no || "N/A"}</b> (${v.vehicle_model || "N/A"}) - Received on : ${formatDate(v.purchase_date)}${soldStr}</li>`;
+          });
         }
 
-        document.getElementById('modalBody').innerHTML = `
+        document.getElementById("modalBody").innerHTML = `
             <div style="text-align:center;">
-                <img src="${emp.image_path || 'https://via.placeholder.com/80'}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;">
+                <img src="${emp.image_path || "https://via.placeholder.com/80"}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;">
                 <h2>${emp.name}</h2>
                 <p style="color:#007bff; font-weight:bold; margin-bottom:5px;">${emp.unique_id} - ${emp.designation || emp.category}</p>
-                ${emp.site_name ? `<p style="color:#0284c7; font-weight:bold; margin-top:0;">📍 Site: ${emp.site_name}</p>` : ''}
+                ${emp.department ? `<p style="color:#2c3e50; font-weight:bold; margin-top:0;">🏢 Dept: ${emp.department}</p>` : ""}
+                ${emp.site_name ? `<p style="color:#0284c7; font-weight:bold; margin-top:0;">📍 Site: ${emp.site_name}</p>` : ""}
             </div>
             <hr>
-            <p><b>Mobile:</b> ${emp.mobile || 'N/A'} | <b>Alt Mobile:</b> ${emp.alt_mobile || 'N/A'}</p>
-            <p><b>Vehicle:</b> ${emp.vehicle_model || 'N/A'} | <b>Plate No:</b> ${emp.plate_no || 'N/A'}</p>
-            <p><b>Passport No:</b> ${emp.passport_no || 'N/A'}</p>
-            <p><b>Address:</b> ${emp.address || 'N/A'}</p>
-            <p><b>Notes:</b> ${emp.notes || 'N/A'}</p>
-            
-            <h4 style="margin:10px 0 5px 0; color:#007bff;">Emergency Contact</h4>
-            <p><b>Name:</b> ${emp.emergency_name || 'N/A'} (${emp.emergency_relation || 'N/A'})</p>
-            <p><b>Mobile:</b> ${emp.emergency_mobile || 'N/A'} | <b>Alt:</b> ${emp.emergency_alt || 'N/A'}</p>
-            
-            ${docSectionHtml}
-
-            ${vehHtml ? `<h4 style="margin:10px 0 5px 0; color:#007bff;">Vehicle History Log</h4><ul style="list-style-type: none; padding-left: 0; font-size:13px;">${vehHtml}</ul>` : ''}
+            <p><b>Mobile:</b> ${emp.mobile || "N/A"} | <b>Alt Mobile:</b> ${emp.alt_mobile || "N/A"}</p>
+            <p><b>Vehicle:</b> ${emp.vehicle_model || "N/A"} | <b>Plate No:</b> ${emp.plate_no || "N/A"}</p>
+            <p><b>Passport No:</b> ${emp.passport_no || "N/A"}</p>
+            ${ksaDetailsHtml}
 
             <h4 style="margin:10px 0 5px 0; color:#007bff;">Position & Site History Log</h4>
             <ul style="list-style-type: none; padding-left: 0; font-size:13px;">${timelineHtml}</ul>
+
+            <p><b>Address:</b> ${emp.address || "N/A"}</p>
+            <p><b>Notes:</b> ${emp.notes || "N/A"}</p>
+            
+            <h4 style="margin:10px 0 5px 0; color:#007bff;">Emergency Contact</h4>
+            <p><b>Name:</b> ${emp.emergency_name || "N/A"} (${emp.emergency_relation || "N/A"})</p>
+            <p><b>Mobile:</b> ${emp.emergency_mobile || "N/A"} || <b>Alt:</b> ${emp.emergency_alt || "N/A"}</p>
+            
+            ${docSectionHtml}${vehHtml ? `<h4 style="margin:10px 0 5px 0; color:#007bff;">Vehicle History Log</h4><ul style="list-style-type: none; padding-left: 0; font-size:13px;">${vehHtml}</ul>` : ""}
 
             <div style="margin-top: 20px; display: flex; justify-content: space-between;">
                 <button class="btn btn-warning" onclick="openEditModal(${emp.id})">✏️ Edit Staff</button>
                 <button class="btn btn-danger" onclick="deleteStaff(${emp.id})">🗑️ Delete Staff</button>
             </div>
         `;
-        document.getElementById('staffModal').style.display = 'flex';
-    }
+        document.getElementById("staffModal").style.display = "flex";
+      }
 
-    function checkRoleOrSiteChange() {
-        const catElem = document.getElementById('categorySelect');
-        const siteElem = document.getElementById('siteNameInput');
-        const changeBox = document.getElementById('roleChangeBox');
-        const changeMsg = document.getElementById('roleChangeMsg');
-        const releasedBox = document.getElementById('releasedBox');
-        
-        const isCategoryChanged = catElem && catElem.value !== window.currentEmpCategory && catElem.value !== 'Released';
+      function checkRoleOrSiteChange() {
+        const catElem = document.getElementById("categorySelect");
+        const siteElem = document.getElementById("siteNameInput");
+        const changeBox = document.getElementById("roleChangeBox");
+        const changeMsg = document.getElementById("roleChangeMsg");
+        const releasedBox = document.getElementById("releasedBox");
+
+        const isCategoryChanged = catElem && catElem.value !== window.currentEmpCategory && catElem.value !== "Released";
         const isSiteChanged = siteElem && siteElem.value.trim() !== window.currentEmpSiteName;
 
         if (isCategoryChanged || isSiteChanged) {
-            changeBox.style.display = 'block';
-            if (isCategoryChanged && isSiteChanged) {
-                changeMsg.innerText = "Role & Site Change Detected! Enter dates:";
-            } else if (isSiteChanged) {
-                changeMsg.innerText = "Site Change Detected! Enter dates:";
-            } else {
-                changeMsg.innerText = "Role Change Detected! Enter dates:";
-            }
-            document.getElementById('prev_end_date').required = true;
-            document.getElementById('new_start_date').required = true;
+          changeBox.style.display = "block";
+          if (isCategoryChanged && isSiteChanged) { changeMsg.innerText = "Role & Site Change Detected! Enter dates:"; } 
+          else if (isSiteChanged) { changeMsg.innerText = "Site Change Detected! Enter dates:"; } 
+          else { changeMsg.innerText = "Role Change Detected! Enter dates:"; }
+          document.getElementById("prev_end_date").required = true;
+          document.getElementById("new_start_date").required = true;
         } else {
-            changeBox.style.display = 'none';
-            document.getElementById('prev_end_date').required = false;
-            document.getElementById('new_start_date').required = false;
+          changeBox.style.display = "none";
+          document.getElementById("prev_end_date").required = false;
+          document.getElementById("new_start_date").required = false;
         }
 
-        if (catElem && catElem.value === 'Released') {
-            releasedBox.style.display = 'block';
-            document.getElementById('released_date').required = true;
+        if (catElem && catElem.value === "Released") {
+          releasedBox.style.display = "block";
+          document.getElementById("released_date").required = true;
         } else {
-            releasedBox.style.display = 'none';
-            document.getElementById('released_date').required = false;
+          releasedBox.style.display = "none";
+          document.getElementById("released_date").required = false;
         }
-    }
+      }
 
-    function deleteStaff(id) {
-        document.getElementById('modalBody').innerHTML = `
+      function deleteStaff(id) {
+        document.getElementById("modalBody").innerHTML = `
             <div style="text-align:center; padding: 20px;">
                 <h3 style="color: #dc3545; margin-bottom: 10px;">Security Verification</h3>
                 <p style="font-size: 14px; color: #555;">Enter Admin Delete Security Key to proceed:</p>
@@ -739,86 +733,59 @@
                 <button class="btn" onclick="viewDetails(${id})" style="background: #6c757d; margin-left: 10px;">Cancel</button>
             </div>
         `;
-    }
+      }
 
-    async function confirmDelete(id) {
-        const deleteSecret = document.getElementById('deleteSecretInput').value;
-        if (!deleteSecret) {
-            showToast("Please enter the security key!");
-            return;
-        }
-
-        const res = await fetch(`/api/employee-tracker/delete/${id}`, { 
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ deleteSecret })
-        });
-        
+      async function confirmDelete(id) {
+        const deleteSecret = document.getElementById("deleteSecretInput").value;
+        if (!deleteSecret) { showToast("Please enter the security key!"); return; }
+        const res = await fetch(`/api/employee-tracker/delete/${id}`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deleteSecret }) });
         const data = await res.json();
         if (data.success) {
-            showToast("Staff deleted successfully!");
-            closeModal();
-            loadStaff();
-        } else {
-            showToast("Error: " + (data.message || "Deletion failed!"));
-        }
-    }
+          showToast("Staff deleted successfully!");
+          closeModal();
+          loadStaff();
+        } else { showToast("Error: " + (data.message || "Deletion failed!")); }
+      }
 
-    function toggleDocAction(select) {
-        const replaceSection = document.getElementById('replaceDocSection');
-        const uploadSection = document.getElementById('uploadDocSection');
-        
-        if (select.value === 'none') {
-            if (replaceSection) replaceSection.style.display = 'none';
-            if (uploadSection) uploadSection.style.display = 'none';
-        } else if (select.value === 'add_new') {
-            if (replaceSection) replaceSection.style.display = 'none';
-            if (uploadSection) uploadSection.style.display = 'block';
-        } else if (select.value === 'replace') {
-            if (replaceSection) replaceSection.style.display = 'block';
-            if (uploadSection) uploadSection.style.display = 'block';
-        }
-    }
+      function toggleDocAction(select) {
+        const replaceSection = document.getElementById("replaceDocSection");
+        const uploadSection = document.getElementById("uploadDocSection");
+        if (select.value === "none") { if (replaceSection) replaceSection.style.display = "none"; if (uploadSection) uploadSection.style.display = "none"; } 
+        else if (select.value === "add_new") { if (replaceSection) replaceSection.style.display = "none"; if (uploadSection) uploadSection.style.display = "block"; } 
+        else if (select.value === "replace") { if (replaceSection) replaceSection.style.display = "block"; if (uploadSection) uploadSection.style.display = "block"; }
+      }
 
-    let stagedDocuments = []; 
+      let stagedDocuments = [];
 
-    function addStagedDocument() {
-        const nameInput = document.getElementById('tempDocName');
-        const fileInput = document.getElementById('tempDocFile');
-
-        if (!fileInput.files.length) {
-            showToast("Please select a file to attach!");
-            return;
-        }
-
+      function addStagedDocument() {
+        const nameInput = document.getElementById("tempDocName");
+        const fileInput = document.getElementById("tempDocFile");
+        if (!fileInput.files.length) { showToast("Please select a file to attach!"); return; }
         const file = fileInput.files[0];
         const docName = nameInput.value.trim() || file.name;
-
         stagedDocuments.push({ name: docName, file: file });
-
-        nameInput.value = '';
-        fileInput.value = '';
-        
+        nameInput.value = "";
+        fileInput.value = "";
         renderStagedDocuments();
-    }
+      }
 
-    function renderStagedDocuments() {
-        const list = document.getElementById('stagedDocsList');
+      function renderStagedDocuments() {
+        const list = document.getElementById("stagedDocsList");
         list.innerHTML = stagedDocuments.map((doc, index) => `
             <li style="display:flex; justify-content:space-between; background:#e9ecef; padding:8px 12px; margin-bottom:5px; border-radius:4px; font-size:13px; align-items:center;">
                 <span><b>${doc.name}</b> <small>(${doc.file.name})</small></span>
                 <button type="button" style="color:#dc3545; border:none; background:none; cursor:pointer; font-weight:bold; font-size:16px;" onclick="removeStagedDocument(${index})">✖</button>
             </li>
-        `).join('');
-    }
+        `).join("");
+      }
 
-    function removeStagedDocument(index) {
+      function removeStagedDocument(index) {
         stagedDocuments.splice(index, 1);
         renderStagedDocuments();
-    }
+      }
 
-    function deleteExistingDocument(docId, empId) {
-        document.getElementById('modalBody').innerHTML = `
+      function deleteExistingDocument(docId, empId) {
+        document.getElementById("modalBody").innerHTML = `
             <div style="text-align:center; padding: 20px;">
                 <h3 style="color: #dc3545; margin-bottom: 10px;">Confirm Deletion</h3>
                 <p style="font-size: 14px; color: #555;">Are you sure you want to remove this attached document?</p>
@@ -828,243 +795,221 @@
                 </div>
             </div>
         `;
-    }
+      }
 
-    async function confirmDeleteDocument(docId, empId) {
+      async function confirmDeleteDocument(docId, empId) {
         try {
-            const res = await fetch(`/api/employee-tracker/document/${docId}`, {
-                method: 'DELETE'
-            });
-            const data = await res.json();
-            if (data.success) {
-                showToast("Document removed successfully!");
-                openEditModal(empId);
-                loadStaff();
-            } else {
-                showToast("Error: " + data.message);
-            }
-        } catch (err) {
-            showToast("Error connecting to server!");
-        }
-    }
+          const res = await fetch(`/api/employee-tracker/document/${docId}`, { method: "DELETE" });
+          const data = await res.json();
+          if (data.success) { showToast("Document removed successfully!"); openEditModal(empId); loadStaff(); } 
+          else { showToast("Error: " + data.message); }
+        } catch (err) { showToast("Error connecting to server!"); }
+      }
 
-    function closeModal() {
-        document.getElementById('staffModal').style.display = 'none';
-    }
+      function closeModal() { document.getElementById("staffModal").style.display = "none"; }
 
-    async function exportStaffToExcel() {
-        if (!allEmployeesData || allEmployeesData.length === 0) {
-            showToast("No employee data to export!");
-            return;
-        }
-
-        if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") {
-            showToast("Excel libraries not loaded!");
-            return;
-        }
+      async function exportStaffToExcel() {
+        if (!allEmployeesData || allEmployeesData.length === 0) { showToast("No employee data to export!"); return; }
+        if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") { showToast("Excel libraries not loaded!"); return; }
 
         showToast("Generating Excel file...");
 
         const workbook = new ExcelJS.Workbook();
-        const worksheet = workbook.addWorksheet("Employees", {
-            views: [{ showGridLines: true, zoomScale: 80 }]
-        });
+        const worksheet = workbook.addWorksheet("Employees", { views: [{ showGridLines: true, zoomScale: 76 }] });
 
-        // Define Headers
         worksheet.columns = [
-            { header: "Unique ID", key: "unique_id", width: 14 },
-            { header: "Full Name", key: "name", width: 25 },
-            { header: "Category", key: "category", width: 18 },
-            { header: "Site Name", key: "site_name", width: 20 },
-            { header: "Designation", key: "designation", width: 22 },
-            { header: "Joining Date", key: "joining_date", width: 15 },
-            { header: "Released Date", key: "released_date", width: 15 },
-            { header: "Mobile No", key: "mobile", width: 18 },
-            { header: "Alt Mobile No", key: "alt_mobile", width: 18 },
-            { header: "Passport No", key: "passport_no", width: 18 },
-            { header: "Vehicle Model", key: "vehicle_model", width: 20 },
-            { header: "Plate No", key: "plate_no", width: 15 },
-            { header: "Received Date", key: "vehicle_purchase_date", width: 16 },
-            { header: "Address", key: "address", width: 30 },
-            { header: "Notes", key: "notes", width: 30 },
-            { header: "Emergency Contact", key: "emergency_name", width: 20 },
-            { header: "Emergency Mobile", key: "emergency_mobile", width: 18 }
+          { header: "Employee ID", key: "unique_id", width: 14 },
+          { header: "Full Name", key: "name", width: 25 },
+          { header: "Category", key: "category", width: 18 },
+          { header: "Department", key: "department", width: 20 },
+          { header: "Site Name", key: "site_name", width: 20 },
+          { header: "Designation", key: "designation", width: 22 },
+          { header: "Joining Date", key: "joining_date", width: 15 },
+          { header: "Released Date", key: "released_date", width: 15 },
+          { header: "Working Country", key: "country", width: 25 },
+          { header: "Mobile No", key: "mobile", width: 18 },
+          { header: "Alt Mobile No", key: "alt_mobile", width: 18 },
+          { header: "Passport No", key: "passport_no", width: 18 },
+          { header: "IQAMA No", key: "iqama_no", width: 18 },
+          { header: "IQAMA Expiry", key: "iqama_expiry", width: 15 },
+          { header: "Licence Expiry", key: "licence_expiry", width: 15 },
+          { header: "Health Ins Expiry", key: "health_insurance_expiry", width: 15 },
+          { header: "Sponsor Name", key: "sponsor_name", width: 25 },
+          { header: "Vehicle Model", key: "vehicle_model", width: 20 },
+          { header: "Plate No", key: "plate_no", width: 15 },
+          { header: "Received Date", key: "vehicle_purchase_date", width: 16 },
+          { header: "Address", key: "address", width: 30 },
+          { header: "Notes", key: "notes", width: 30 },
+          { header: "Emergency Contact", key: "emergency_name", width: 20 },
+          { header: "Emergency Mobile", key: "emergency_mobile", width: 18 }
         ];
 
-        // Insert Rows
-        allEmployeesData.forEach(emp => {
-            worksheet.addRow({
-                unique_id: emp.unique_id || "",
-                name: emp.name || "",
-                category: emp.category || "",
-                site_name: emp.site_name || "",
-                designation: emp.designation || "",
-                joining_date: emp.joining_date ? toInputDate(emp.joining_date) : "",
-                released_date: (emp.category === 'Released' && emp.released_date) ? toInputDate(emp.released_date) : "",
-                mobile: emp.mobile || "",
-                alt_mobile: emp.alt_mobile || "",
-                passport_no: emp.passport_no || "",
-                vehicle_model: emp.vehicle_model || "",
-                plate_no: emp.plate_no || "",
-                vehicle_purchase_date: emp.vehicle_purchase_date ? toInputDate(emp.vehicle_purchase_date) : "",
-                address: emp.address || "",
-                notes: emp.notes || "",
-                emergency_name: emp.emergency_name ? `${emp.emergency_name} (${emp.emergency_relation || ''})` : "",
-                emergency_mobile: emp.emergency_mobile || ""
-            });
+        allEmployeesData.forEach((emp) => {
+          worksheet.addRow({
+            unique_id: emp.unique_id || "",
+            name: emp.name || "",
+            category: emp.category || "",
+            department: emp.department || "",
+            site_name: emp.site_name || "",
+            designation: emp.designation || "",
+            joining_date: emp.joining_date ? toInputDate(emp.joining_date) : "",
+            released_date: emp.category === "Released" && emp.released_date ? toInputDate(emp.released_date) : "",
+            country: (emp.country === 'KSA' || !emp.country) ? "Kingdom of Saudi Arabia" : emp.country,
+            mobile: emp.mobile || "",
+            alt_mobile: emp.alt_mobile || "",
+            passport_no: emp.passport_no || "",
+            iqama_no: emp.iqama_no || "",
+            iqama_expiry: emp.iqama_expiry ? toInputDate(emp.iqama_expiry) : "",
+            licence_expiry: emp.licence_expiry ? toInputDate(emp.licence_expiry) : "",
+            health_insurance_expiry: emp.health_insurance_expiry ? toInputDate(emp.health_insurance_expiry) : "",
+            sponsor_name: emp.sponsor_name || "",
+            vehicle_model: emp.vehicle_model || "",
+            plate_no: emp.plate_no || "",
+            vehicle_purchase_date: emp.vehicle_purchase_date ? toInputDate(emp.vehicle_purchase_date) : "",
+            address: emp.address || "",
+            notes: emp.notes || "",
+            emergency_name: emp.emergency_name ? `${emp.emergency_name} (${emp.emergency_relation || ""})` : "",
+            emergency_mobile: emp.emergency_mobile || "",
+          });
         });
 
-        // Header Styling: Black Fill, White Text, Bold, Center Alignment
         const headerRow = worksheet.getRow(1);
         headerRow.height = 28;
         headerRow.eachCell((cell) => {
-            cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
-            cell.alignment = { horizontal: "center", vertical: "middle" };
-            cell.border = {
-                top: { style: "thin", color: { argb: "FF333333" } },
-                bottom: { style: "medium", color: { argb: "FF000000" } },
-                left: { style: "thin", color: { argb: "FF333333" } },
-                right: { style: "thin", color: { argb: "FF333333" } }
-            };
+          cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+          cell.border = { top: { style: "thin", color: { argb: "FF333333" } }, bottom: { style: "medium", color: { argb: "FF000000" } }, left: { style: "thin", color: { argb: "FF333333" } }, right: { style: "thin", color: { argb: "FF333333" } } };
         });
 
-        // Auto-filter for entire column range
-        worksheet.autoFilter = {
-            from: { row: 1, column: 1 },
-            to: { row: 1, column: worksheet.columns.length }
-        };
+        worksheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: worksheet.columns.length } };
 
-        // Data Row Styling
         worksheet.eachRow((row, rowNumber) => {
-            if (rowNumber > 1) {
-                row.height = 20;
-                row.eachCell((cell) => {
-                    cell.alignment = { vertical: "middle" };
-                    cell.font = { name: "Arial", size: 10 };
-                    cell.border = {
-                        top: { style: "thin", color: { argb: "FFE2E8F0" } },
-                        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
-                        left: { style: "thin", color: { argb: "FFE2E8F0" } },
-                        right: { style: "thin", color: { argb: "FFE2E8F0" } }
-                    };
-                });
-            }
+          if (rowNumber > 1) {
+            row.height = 20;
+            row.eachCell((cell) => {
+              cell.alignment = { vertical: "middle" };
+              cell.font = { name: "Arial", size: 10 };
+              cell.border = { top: { style: "thin", color: { argb: "FFE2E8F0" } }, bottom: { style: "thin", color: { argb: "FFE2E8F0" } }, left: { style: "thin", color: { argb: "FFE2E8F0" } }, right: { style: "thin", color: { argb: "FFE2E8F0" } } };
+            });
+          }
         });
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-        saveAs(blob, `Employee_Directory_${new Date().toISOString().split('T')[0]}.xlsx`);
-
+        saveAs(blob, `Employee_Directory_${new Date().toISOString().split("T")[0]}.xlsx`);
         showToast("Excel exported successfully!");
-    }
+      }
 
-    const defaultDesignations = {
-        'Director': ['Managing Director', 'Director'],
-        'Site Co': ['Co-Ordinator'],
-        'Field Co': ['Co-Ordinator'],
-        'Office Staff': ['Office Administration'],
-        'Office Accounts': ['Accountant', 'Jr Accountant']
-    };
+      const defaultDesignations = {
+        Director: ["Managing Director", "Director"],
+        "Site Co": ["Co-Ordinator"],
+        "Field Co": ["Co-Ordinator"],
+        "Business Co": ["Business Co-ordinator"],
+        "Office Staff": ["Office Administration"],
+        "Office Accounts": ["Accountant", "Jr Accountant"],
+      };
 
-    function updateDesignationOptions(catSelectId, desigSelectId, selectedVal = '') {
+      function updateDesignationOptions(catSelectId, desigSelectId, selectedVal = "") {
         const cat = document.getElementById(catSelectId).value;
         const desigSelect = document.getElementById(desigSelectId);
         if (!desigSelect) return;
 
-        desigSelect.innerHTML = '';
+        desigSelect.innerHTML = "";
         const list = defaultDesignations[cat] || [];
 
-        if (cat === 'Site Co' || cat === 'Field Co') {
-            const opt = document.createElement('option');
-            opt.value = 'Co-Ordinator';
-            opt.textContent = 'Co-Ordinator';
-            opt.selected = true;
-            desigSelect.appendChild(opt);
+        if (cat === "Site Co" || cat === "Field Co") {
+          const opt = document.createElement("option");
+          opt.value = "Co-Ordinator";
+          opt.textContent = "Co-Ordinator";
+          opt.selected = true;
+          desigSelect.appendChild(opt);
+        } else if (cat === "Business Co") {
+          const opt = document.createElement("option");
+          opt.value = "Business Co-ordinator";
+          opt.textContent = "Business Co-ordinator";
+          opt.selected = true;
+          desigSelect.appendChild(opt);
         } else {
-            let matched = false;
-            list.forEach(d => {
-                const opt = document.createElement('option');
-                opt.value = d;
-                opt.textContent = d;
-                if (d === selectedVal) { opt.selected = true; matched = true; }
-                desigSelect.appendChild(opt);
+          let matched = false;
+          list.forEach((d) => {
+            const opt = document.createElement("option");
+            opt.value = d;
+            opt.textContent = d;
+            if (d === selectedVal) { opt.selected = true; matched = true; }
+            desigSelect.appendChild(opt);
+          });
+
+          if (selectedVal && !matched && selectedVal !== "Co-Ordinator") {
+            const customOpt = document.createElement("option");
+            customOpt.value = selectedVal;
+            customOpt.textContent = selectedVal;
+            customOpt.selected = true;
+            desigSelect.appendChild(customOpt);
+          }
+
+          const addOpt = document.createElement("option");
+          addOpt.value = "__add_new__";
+          addOpt.textContent = "+ Add New";
+          desigSelect.appendChild(addOpt);
+        }
+      }
+
+      async function handleDesignationChange(selectElem, catSelectId) {
+        if (selectElem.value === "__add_new__") {
+          if (typeof Swal !== "undefined") {
+            const { value: newDesig } = await Swal.fire({
+              title: "Add New Designation",
+              input: "text",
+              inputPlaceholder: "Enter Designation Name...",
+              showCancelButton: true,
+              confirmButtonText: "Add",
+              confirmButtonColor: "#007bff",
+              cancelButtonColor: "#6c757d",
+              target: document.getElementById("staffModal") || document.body,
+              inputValidator: (value) => { if (!value || !value.trim()) { return "Designation name is required!"; } }
             });
 
-            if (selectedVal && !matched && selectedVal !== 'Co-Ordinator') {
-                const customOpt = document.createElement('option');
-                customOpt.value = selectedVal;
-                customOpt.textContent = selectedVal;
-                customOpt.selected = true;
-                desigSelect.appendChild(customOpt);
-            }
-
-            const addOpt = document.createElement('option');
-            addOpt.value = '__add_new__';
-            addOpt.textContent = '+ Add New';
-            desigSelect.appendChild(addOpt);
+            if (newDesig && newDesig.trim() !== "") {
+              const val = newDesig.trim();
+              const opt = document.createElement("option");
+              opt.value = val;
+              opt.textContent = val;
+              selectElem.insertBefore(opt, selectElem.lastElementChild);
+              selectElem.value = val;
+            } else { updateDesignationOptions(catSelectId, selectElem.id); }
+          } else {
+            const val = window.prompt("Enter New Designation:");
+            if (val && val.trim() !== "") {
+              const cleanVal = val.trim();
+              const opt = document.createElement("option");
+              opt.value = cleanVal;
+              opt.textContent = cleanVal;
+              selectElem.insertBefore(opt, selectElem.lastElementChild);
+              selectElem.value = cleanVal;
+            } else { updateDesignationOptions(catSelectId, selectElem.id); }
+          }
         }
-    }
+      }
 
-    async function handleDesignationChange(selectElem, catSelectId) {
-        if (selectElem.value === '__add_new__') {
-            // SweetAlert2 library load aayittundenkil athu upayogikkunnu
-            if (typeof Swal !== 'undefined') {
-                const { value: newDesig } = await Swal.fire({
-                    title: 'Add New Designation',
-                    input: 'text',
-                    inputPlaceholder: 'Enter Designation Name...',
-                    showCancelButton: true,
-                    confirmButtonText: 'Add',
-                    confirmButtonColor: '#007bff',
-                    cancelButtonColor: '#6c757d',
-                    target: document.getElementById('staffModal') || document.body,
-                    inputValidator: (value) => {
-                        if (!value || !value.trim()) {
-                            return 'Designation name is required!';
-                        }
-                    }
-                });
-
-                if (newDesig && newDesig.trim() !== '') {
-                    const val = newDesig.trim();
-                    const opt = document.createElement('option');
-                    opt.value = val;
-                    opt.textContent = val;
-                    selectElem.insertBefore(opt, selectElem.lastElementChild);
-                    selectElem.value = val;
-                } else {
-                    updateDesignationOptions(catSelectId, selectElem.id);
-                }
-            } else {
-                // Fallback custom lightweight modal prompt
-                const val = window.prompt("Enter New Designation:");
-                if (val && val.trim() !== '') {
-                    const cleanVal = val.trim();
-                    const opt = document.createElement('option');
-                    opt.value = cleanVal;
-                    opt.textContent = cleanVal;
-                    selectElem.insertBefore(opt, selectElem.lastElementChild);
-                    selectElem.value = cleanVal;
-                } else {
-                    updateDesignationOptions(catSelectId, selectElem.id);
-                }
-            }
-        }
-    }
-
-    function toggleSiteNameField(catSelectId, siteBoxId) {
+      function toggleSiteNameField(catSelectId, siteBoxId) {
         const cat = document.getElementById(catSelectId).value;
         const siteBox = document.getElementById(siteBoxId);
         if (!siteBox) return;
-        if (cat === 'Site Co') {
-            siteBox.style.display = 'block';
-        } else {
-            siteBox.style.display = 'none';
-            const input = siteBox.querySelector('input');
-            if (input) input.value = '';
+        if (cat === "Site Co") { siteBox.style.display = "block"; } 
+        else { siteBox.style.display = "none"; const input = siteBox.querySelector("input"); if (input) input.value = ""; }
+      }
+
+      function toggleKsaFields(countryVal, boxId) {
+        const box = document.getElementById(boxId);
+        if (box) {
+          if (countryVal === 'India') {
+            box.style.display = 'none';
+          } else {
+            box.style.display = 'block';
+          }
         }
-    }
-</script>
-</body>
+      }
+    </script>
+  </body>
 </html>

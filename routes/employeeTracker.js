@@ -30,15 +30,16 @@ router.get('/all', async (req, res) => {
 router.post('/add', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         const { 
-            name, designation, joining_date, category, site_name, vehicle_model, plate_no, vehicle_purchase_date, mobile, alt_mobile, address, 
+            name, department, designation, joining_date, category, site_name, vehicle_model, plate_no, vehicle_purchase_date, mobile, alt_mobile, address, 
             passport_no, notes, emergency_name, emergency_mobile, 
-            emergency_alt, emergency_relation 
+            emergency_alt, emergency_relation, country, iqama_no, iqama_expiry, licence_expiry, health_insurance_expiry, sponsor_name
         } = req.body;
 
         let prefix = 'EMP';
         if (category === 'Director') prefix = 'DIR';
         else if (category === 'Site Co') prefix = 'SC';
         else if (category === 'Field Co') prefix = 'FL';
+        else if (category === 'Business Co') prefix = 'BC';
         else if (category === 'Office Staff' || category === 'Office Admin') prefix = 'OF-ST';
         else if (category === 'Office Accounts') prefix = 'OF-ACC';
 
@@ -58,9 +59,9 @@ router.post('/add', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docu
         const vehicle_status = (vehicle_model || plate_no) ? 'Active' : null;
 
         const newEmp = await pool.query(
-            `INSERT INTO employees (unique_id, name, designation, joining_date, category, site_name, vehicle_model, plate_no, vehicle_purchase_date, vehicle_status, image_path, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING *`,
-            [unique_id, name, designation, joining_date, category, site_name || null, vehicle_model || null, plate_no || null, vehicle_purchase_date || null, vehicle_status, imagePath, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation]
+            `INSERT INTO employees (unique_id, name, department, designation, joining_date, category, site_name, vehicle_model, plate_no, vehicle_purchase_date, vehicle_status, image_path, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, country, iqama_no, iqama_expiry, licence_expiry, health_insurance_expiry, sponsor_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27) RETURNING *`,
+            [unique_id, name, department || null, designation, joining_date, category, site_name || null, vehicle_model || null, plate_no || null, vehicle_purchase_date || null, vehicle_status, imagePath, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, country || 'Kingdom of Saudi Arabia', iqama_no || null, iqama_expiry || null, licence_expiry || null, health_insurance_expiry || null, sponsor_name || null]
         );
 
         const targetEmpId = newEmp.rows[0].id;
@@ -105,22 +106,23 @@ router.post('/add', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docu
     }
 });
 
-// 3. Edit Employee & Handle Vehicle/Role History
+// 3. Edit Employee & Handle Vehicle/Role/Dept History
 router.post('/edit/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         const empId = req.params.id;
         const { 
-            name, designation, joining_date, category, site_name, prev_end_date, new_start_date, released_date, mobile, alt_mobile, address, 
+            name, department, designation, joining_date, category, site_name, prev_end_date, new_start_date, released_date, mobile, alt_mobile, address, 
             passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, doc_action, replace_doc_id,
             vehicle_action, vehicle_model, plate_no, vehicle_purchase_date, vehicle_sold_date,
-            new_vehicle_model, new_plate_no, new_vehicle_purchase_date
+            new_vehicle_model, new_plate_no, new_vehicle_purchase_date, country, iqama_no, iqama_expiry, licence_expiry, health_insurance_expiry, sponsor_name
         } = req.body;
 
-        const oldData = await pool.query('SELECT unique_id, category, designation, site_name, vehicle_model, plate_no, vehicle_purchase_date, vehicle_status, vehicle_sold_date, joining_date FROM employees WHERE id = $1', [empId]);
+        const oldData = await pool.query('SELECT unique_id, category, department, designation, site_name, vehicle_model, plate_no, vehicle_purchase_date, vehicle_status, vehicle_sold_date, joining_date, country, iqama_no, iqama_expiry, licence_expiry, health_insurance_expiry, sponsor_name FROM employees WHERE id = $1', [empId]);
         if (oldData.rows.length === 0) return res.status(404).json({ success: false, message: "Employee not found" });
 
         const empData = oldData.rows[0];
         const prevCat = empData.category;
+        const prevDept = (empData.department || '').trim();
         const prevDesig = empData.designation;
         const prevSite = (empData.site_name || '').trim();
         const prevJoiningDate = empData.joining_date;
@@ -128,12 +130,14 @@ router.post('/edit/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 
         let activeJoiningDate = joining_date;
         const isCategoryChanged = prevCat !== category && prevCat !== 'Released';
         const isSiteChanged = prevSite !== (site_name || '').trim();
+        const isDeptChanged = prevDept !== (department || '').trim();
+        const isDesigChanged = prevDesig !== (designation || '').trim();
 
-        if ((isCategoryChanged || isSiteChanged) && prevCat !== 'Released') {
+        if ((isCategoryChanged || isSiteChanged || isDeptChanged || isDesigChanged) && prevCat !== 'Released') {
             activeJoiningDate = new_start_date || activeJoiningDate; 
             await pool.query(
-                `INSERT INTO employee_history (employee_id, previous_category, previous_designation, previous_site, start_date, end_date) VALUES ($1, $2, $3, $4, $5, $6)`,
-                [empId, prevCat, prevDesig, prevSite || null, prevJoiningDate, prev_end_date]
+                `INSERT INTO employee_history (employee_id, previous_category, previous_department, previous_designation, previous_site, start_date, end_date) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                [empId, prevCat, prevDept || null, prevDesig, prevSite || null, prevJoiningDate, prev_end_date]
             );
         }
 
@@ -177,8 +181,8 @@ router.post('/edit/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 
             );
         }
 
-        let query = `UPDATE employees SET name = $1, designation = $2, joining_date = $3, category = $4, site_name = $5, vehicle_model = $6, plate_no = $7, vehicle_purchase_date = $8, vehicle_status = $9, vehicle_sold_date = $10, mobile = $11, alt_mobile = $12, address = $13, passport_no = $14, notes = $15, emergency_name = $16, emergency_mobile = $17, emergency_alt = $18, emergency_relation = $19, released_date = $20`;
-        let params = [name, designation, activeJoiningDate, category, site_name || null, curVehModel || null, curPlateNo || null, curPurchDate || null, curVehStatus, curSoldDate || null, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, released_date || null];
+        let query = `UPDATE employees SET name = $1, department = $2, designation = $3, joining_date = $4, category = $5, site_name = $6, vehicle_model = $7, plate_no = $8, vehicle_purchase_date = $9, vehicle_status = $10, vehicle_sold_date = $11, mobile = $12, alt_mobile = $13, address = $14, passport_no = $15, notes = $16, emergency_name = $17, emergency_mobile = $18, emergency_alt = $19, emergency_relation = $20, released_date = $21, country = $22, iqama_no = $23, iqama_expiry = $24, licence_expiry = $25, health_insurance_expiry = $26, sponsor_name = $27`;
+        let params = [name, department || null, designation, activeJoiningDate, category, site_name || null, curVehModel || null, curPlateNo || null, curPurchDate || null, curVehStatus, curSoldDate || null, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, released_date || null, country || 'Kingdom of Saudi Arabia', iqama_no || null, iqama_expiry || null, licence_expiry || null, health_insurance_expiry || null, sponsor_name || null];
 
         if (req.files && req.files['image'] && req.files['image'][0]) {
             const imgFile = req.files['image'][0];
