@@ -15,7 +15,7 @@ router.post("/verify-pin", (req, res) => {
     const token = jwt.sign({ role: "admin_access" }, JWT_SECRET, {
       expiresIn: "12h",
     });
-    res.json({ success: true, token });
+    res.json({ success: true, token }); 
   } else {
     res.status(401).json({ success: false, message: "Invalid PIN" });
   }

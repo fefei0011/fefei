@@ -230,12 +230,17 @@
                 `;
                 
                 emps.forEach(emp => {
+                    const siteInfo = emp.site_name ? `<p style="color:#0284c7; font-weight:600;">📍 ${emp.site_name}</p>` : '';
+                    const vehicleInfo = (emp.vehicle_model || emp.plate_no) ? `<p style="font-size:12px; color:#475569;">🚗 ${emp.vehicle_model || ''} ${emp.plate_no ? `(${emp.plate_no})` : ''}</p>` : '';
+
                     sectionHtml += `
                         <div class="card" onclick="viewDetails(${emp.id})">
                             <img src="${emp.image_path || 'https://via.placeholder.com/80'}" alt="Staff">
                             <h3>${emp.name}</h3>
                             <p><b>${emp.unique_id}</b></p>
                             <p>${emp.designation || emp.category}</p>
+                            ${siteInfo}
+                            ${vehicleInfo}
                             <p>📞 ${emp.mobile || 'N/A'}</p>
                         </div>
                     `;
@@ -324,10 +329,13 @@
                             <option value="Office Accounts">Office Accounts</option>
                         </select>
                     </div>
+                    <div class="form-group"><label>Site Name</label><input type="text" name="site_name" placeholder="e.g. Bisha, Afif"></div>
                     <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
                     <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" required></div>
                     <div class="form-group"><label>Mobile No</label><input type="text" name="mobile"></div>
                     <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile"></div>
+                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" placeholder="e.g. Hilux, D-Max"></div>
+                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" placeholder="e.g. 5974 BVA"></div>
                     <div class="form-group"><label>Passport No</label><input type="text" name="passport_no"></div>
                     <div class="form-group"><label>Staff Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
                 </div>
@@ -386,6 +394,7 @@
     const docs = data.documents || []; 
 
     window.currentEmpCategory = emp.category;
+    window.currentEmpSiteName = (emp.site_name || '').trim();
 
         document.getElementById('modalBody').innerHTML = `
             <h2>Edit Staff (${emp.unique_id})</h2>
@@ -393,7 +402,7 @@
                 <div class="form-row">
                     <div class="form-group"><label>Full Name</label><input type="text" name="name" value="${emp.name || ''}" required></div>
                     <div class="form-group"><label>Division / Category</label>
-                        <select name="category" id="categorySelect" onchange="checkCategoryChange(this)" required>
+                        <select name="category" id="categorySelect" onchange="checkRoleOrSiteChange()" required>
                             <option value="Director" ${emp.category === 'Director' ? 'selected' : ''}>Director</option>
                             <option value="Site Co" ${emp.category === 'Site Co' ? 'selected' : ''}>Site Co</option>
                             <option value="Field Co" ${emp.category === 'Field Co' ? 'selected' : ''}>Field Co</option>
@@ -402,13 +411,14 @@
                             <option value="Released" ${emp.category === 'Released' ? 'selected' : ''}>Released</option>
                         </select>
                     </div>
+                    <div class="form-group"><label>Site Name</label><input type="text" name="site_name" id="siteNameInput" value="${emp.site_name || ''}" oninput="checkRoleOrSiteChange()" placeholder="e.g. Bisha, Afif"></div>
                     
-                    <!-- Hidden Boxes -->
+                    <!-- Role or Site Change Box -->
                     <div id="roleChangeBox" class="full-width" style="display:none; background:#fff3cd; padding:10px; border-radius:5px; border:1px solid #ffeeba;">
-                        <p style="margin:0 0 8px 0; font-size:13px; color:#856404; font-weight:bold;">Role Change Detected! Enter dates:</p>
+                        <p id="roleChangeMsg" style="margin:0 0 8px 0; font-size:13px; color:#856404; font-weight:bold;">Change Detected! Enter dates:</p>
                         <div class="form-row">
-                            <div class="form-group"><label>Previous Role End Date</label><input type="date" name="prev_end_date" id="prev_end_date"></div>
-                            <div class="form-group"><label>New Role Start Date</label><input type="date" name="new_start_date" id="new_start_date"></div>
+                            <div class="form-group"><label id="prevDateLabel">Previous End Date</label><input type="date" name="prev_end_date" id="prev_end_date"></div>
+                            <div class="form-group"><label id="newDateLabel">New Start Date</label><input type="date" name="new_start_date" id="new_start_date"></div>
                         </div>
                     </div>
                     <div id="releasedBox" class="full-width" style="display:${emp.category === 'Released' ? 'block' : 'none'}; background:#f8d7da; padding:10px; border-radius:5px; border:1px solid #f5c6cb;">
@@ -419,6 +429,8 @@
                     <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" value="${toInputDate(emp.joining_date)}" required></div>
                     <div class="form-group"><label>Mobile No</label><input type="text" name="mobile" value="${emp.mobile || ''}"></div>
                     <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile" value="${emp.alt_mobile || ''}"></div>
+                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" value="${emp.vehicle_model || ''}" placeholder="e.g. Hilux, D-Max"></div>
+                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" value="${emp.plate_no || ''}" placeholder="e.g. 5974 BVA"></div>
                     <div class="form-group"><label>Passport No</label><input type="text" name="passport_no" value="${emp.passport_no || ''}"></div>
                     <div class="form-group"><label>Update Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
                 </div>
@@ -699,14 +711,26 @@
         document.getElementById('staffModal').style.display = 'flex';
     }
 
-    // Detect if category is changed
-    function checkCategoryChange(selectElem) {
+    // Detect if category OR site name is changed
+    function checkRoleOrSiteChange() {
+        const catElem = document.getElementById('categorySelect');
+        const siteElem = document.getElementById('siteNameInput');
         const changeBox = document.getElementById('roleChangeBox');
+        const changeMsg = document.getElementById('roleChangeMsg');
         const releasedBox = document.getElementById('releasedBox');
         
-        // History Tracking Box
-        if (selectElem.value !== window.currentEmpCategory && selectElem.value !== 'Released') {
+        const isCategoryChanged = catElem && catElem.value !== window.currentEmpCategory && catElem.value !== 'Released';
+        const isSiteChanged = siteElem && siteElem.value.trim() !== window.currentEmpSiteName;
+
+        if (isCategoryChanged || isSiteChanged) {
             changeBox.style.display = 'block';
+            if (isCategoryChanged && isSiteChanged) {
+                changeMsg.innerText = "Role & Site Change Detected! Enter dates:";
+            } else if (isSiteChanged) {
+                changeMsg.innerText = "Site Change Detected! Enter dates:";
+            } else {
+                changeMsg.innerText = "Role Change Detected! Enter dates:";
+            }
             document.getElementById('prev_end_date').required = true;
             document.getElementById('new_start_date').required = true;
         } else {
@@ -716,7 +740,7 @@
         }
 
         // Released Date Box
-        if (selectElem.value === 'Released') {
+        if (catElem && catElem.value === 'Released') {
             releasedBox.style.display = 'block';
             document.getElementById('released_date').required = true;
         } else {

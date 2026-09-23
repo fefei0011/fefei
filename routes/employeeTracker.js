@@ -27,11 +27,11 @@ router.get('/all', async (req, res) => {
     }
 });
 
-// 2. Add New Employee with Custom Unique ID and File Naming (ID + Count)
+// 2. Add New Employee with Custom Unique ID, Site Name & Vehicle Details
 router.post('/add', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         const { 
-            name, designation, joining_date, category, mobile, alt_mobile, address, 
+            name, designation, joining_date, category, site_name, vehicle_model, plate_no, mobile, alt_mobile, address, 
             passport_no, notes, emergency_name, emergency_mobile, 
             emergency_alt, emergency_relation 
         } = req.body;
@@ -44,12 +44,11 @@ router.post('/add', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'docu
         else if (category === 'Office Accounts') prefix = 'OF-ACC';
 
         const countRes = await pool.query(
-    'SELECT COUNT(*) FROM employees WHERE category = $1',
-    [category]
-);
-const nextIdNum = parseInt(countRes.rows[0].count) + 1;
-const unique_id = `${prefix}-${String(nextIdNum).padStart(3, '0')}`;
-
+            'SELECT COUNT(*) FROM employees WHERE category = $1',
+            [category]
+        );
+        const nextIdNum = parseInt(countRes.rows[0].count) + 1;
+        const unique_id = `${prefix}-${String(nextIdNum).padStart(3, '0')}`;
 
         // Handle Profile Image Upload with Custom Naming
         let imagePath = null;
@@ -62,9 +61,9 @@ const unique_id = `${prefix}-${String(nextIdNum).padStart(3, '0')}`;
         }
 
         const newEmp = await pool.query(
-            `INSERT INTO employees (unique_id, name, designation, joining_date, category, image_path, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING *`,
-            [unique_id, name, designation, joining_date, category, imagePath, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation]
+            `INSERT INTO employees (unique_id, name, designation, joining_date, category, site_name, vehicle_model, plate_no, image_path, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
+            [unique_id, name, designation, joining_date, category, site_name || null, vehicle_model || null, plate_no || null, imagePath, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation]
         );
 
         // Handle Multiple Documents Upload with unique_id - count format
@@ -126,36 +125,42 @@ for (let i = 0; i < docs.length; i++) {
     }
 });
 
-// 3. Edit Employee & Handle Multiple File Uploads & Doc Replacement
+// 3. Edit Employee & Handle Multiple File Uploads, Site & Role Change History
 router.post('/edit/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'documents', maxCount: 10 }]), async (req, res) => {
     try {
         const empId = req.params.id;
         const { 
-            name, designation, joining_date, category, prev_end_date, new_start_date, released_date, mobile, alt_mobile, address, 
+            name, designation, joining_date, category, site_name, vehicle_model, plate_no, prev_end_date, new_start_date, released_date, mobile, alt_mobile, address, 
             passport_no, notes, emergency_name, emergency_mobile, 
             emergency_alt, emergency_relation, doc_action, replace_doc_id
         } = req.body;
 
-        const oldData = await pool.query('SELECT unique_id, category, designation, joining_date FROM employees WHERE id = $1', [empId]);
+        const oldData = await pool.query('SELECT unique_id, category, designation, site_name, joining_date FROM employees WHERE id = $1', [empId]);
         if (oldData.rows.length === 0) return res.status(404).json({ success: false, message: "Employee not found" });
 
         const empData = oldData.rows[0];
         const prevCat = empData.category;
         const prevDesig = empData.designation;
+        const prevSite = (empData.site_name || '').trim();
         const prevJoiningDate = empData.joining_date;
 
         let activeJoiningDate = joining_date;
 
-        if (prevCat !== category && prevCat !== 'Released') {
-            activeJoiningDate = new_start_date; 
+        const isCategoryChanged = prevCat !== category && prevCat !== 'Released';
+        const isSiteChanged = prevSite !== (site_name || '').trim();
+
+        // റോൾ മാറുകയോ സൈറ്റ് നെയിം മാറുകയോ ചെയ്താൽ ഹിസ്റ്ററി ലോഗിൽ ചേർക്കുന്നു
+        if ((isCategoryChanged || isSiteChanged) && prevCat !== 'Released') {
+            activeJoiningDate = new_start_date || activeJoiningDate; 
             await pool.query(
-                `INSERT INTO employee_history (employee_id, previous_category, previous_designation, start_date, end_date) VALUES ($1, $2, $3, $4, $5)`,
-                [empId, prevCat, prevDesig, prevJoiningDate, prev_end_date]
+                `INSERT INTO employee_history (employee_id, previous_category, previous_designation, previous_site, start_date, end_date) 
+                 VALUES ($1, $2, $3, $4, $5, $6)`,
+                [empId, prevCat, prevDesig, prevSite || null, prevJoiningDate, prev_end_date]
             );
         }
 
-        let query = `UPDATE employees SET name = $1, designation = $2, joining_date = $3, category = $4, mobile = $5, alt_mobile = $6, address = $7, passport_no = $8, notes = $9, emergency_name = $10, emergency_mobile = $11, emergency_alt = $12, emergency_relation = $13, released_date = $14`;
-        let params = [name, designation, activeJoiningDate, category, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, released_date || null];
+        let query = `UPDATE employees SET name = $1, designation = $2, joining_date = $3, category = $4, site_name = $5, vehicle_model = $6, plate_no = $7, mobile = $8, alt_mobile = $9, address = $10, passport_no = $11, notes = $12, emergency_name = $13, emergency_mobile = $14, emergency_alt = $15, emergency_relation = $16, released_date = $17`;
+        let params = [name, designation, activeJoiningDate, category, site_name || null, vehicle_model || null, plate_no || null, mobile, alt_mobile, address, passport_no, notes, emergency_name, emergency_mobile, emergency_alt, emergency_relation, released_date || null];
 
         if (req.files && req.files['image'] && req.files['image'][0]) {
             const imgFile = req.files['image'][0];
