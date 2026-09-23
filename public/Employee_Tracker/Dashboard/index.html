@@ -64,7 +64,14 @@
         </div>
         <button class="search-btn" onclick="toggleSearch()" title="Search">🔍</button>
         <button class="btn" onclick="openAddModal()">+ Add New Staff</button>
-        <button class="btn" style="background: #16a34a" onclick="exportStaffToExcel()" title="Export all staff to Excel">📊 Export Excel</button>
+<button
+          class="btn"
+          style="background: #16a34a"
+          onclick="promptExportStaff()"
+          title="Export all staff to Excel"
+        >
+          📊 Export Excel
+        </button>
         <button class="btnx" onclick="window.location.href = '../staff_salary/'">Staff Salary</button>
         <button class="btn btn-primary" onclick="window.location.href = '../admin/index.html'">Admin Panel</button>
       </div>
@@ -808,17 +815,85 @@
 
       function closeModal() { document.getElementById("staffModal").style.display = "none"; }
 
-      async function exportStaffToExcel() {
+      async function fetchImageAsBase64(url) {
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return null;
+          const blob = await res.blob();
+          return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64data = reader.result;
+              const ext = blob.type.includes("png") ? "png" : "jpeg";
+              const img = new Image();
+              img.onload = () => {
+                resolve({
+                  base64: base64data,
+                  extension: ext,
+                  width: img.naturalWidth || 40,
+                  height: img.naturalHeight || 40
+                });
+              };
+              img.onerror = () => resolve({ base64: base64data, extension: ext, width: 40, height: 40 });
+              img.src = base64data;
+            };
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          return null;
+        }
+      }
+
+      async function promptExportStaff() {
+        if (!allEmployeesData || allEmployeesData.length === 0) {
+          showToast("No employee data to export!");
+          return;
+        }
+
+        if (typeof Swal !== "undefined") {
+          const result = await Swal.fire({
+            title: "Export to Excel",
+            text: "Choose an export option:",
+            icon: "question",
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: "🖼️ With Photo",
+            denyButtonText: "📄 Without Photo",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#16a34a",
+            denyButtonColor: "#0284c7",
+          });
+
+          if (result.isConfirmed) {
+            exportStaffToExcel(true);
+          } else if (result.isDenied) {
+            exportStaffToExcel(false);
+          }
+        } else {
+          const withPhoto = confirm("Click OK to Export WITH Photos, or Cancel to Export WITHOUT Photos.");
+          exportStaffToExcel(withPhoto);
+        }
+      }
+
+      async function exportStaffToExcel(withPhoto = true) {
         if (!allEmployeesData || allEmployeesData.length === 0) { showToast("No employee data to export!"); return; }
         if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") { showToast("Excel libraries not loaded!"); return; }
 
-        showToast("Generating Excel file...");
+        showToast(withPhoto ? "Generating Excel file with photos..." : "Generating Excel file...");
 
         const workbook = new ExcelJS.Workbook();
         const worksheet = workbook.addWorksheet("Employees", { views: [{ showGridLines: true, zoomScale: 76 }] });
 
-        worksheet.columns = [
-          { header: "Employee ID", key: "unique_id", width: 14 },
+        // Build column definitions based on withPhoto option
+        const cols = [
+          { header: "Employee ID", key: "unique_id", width: 14 }
+        ];
+
+        if (withPhoto) {
+          cols.push({ header: "Photo", key: "photo", width: 8 });
+        }
+
+        cols.push(
           { header: "Full Name", key: "name", width: 25 },
           { header: "Category", key: "category", width: 18 },
           { header: "Department", key: "department", width: 20 },
@@ -842,10 +917,16 @@
           { header: "Notes", key: "notes", width: 30 },
           { header: "Emergency Contact", key: "emergency_name", width: 20 },
           { header: "Emergency Mobile", key: "emergency_mobile", width: 18 }
-        ];
+        );
 
-        allEmployeesData.forEach((emp) => {
-          worksheet.addRow({
+        worksheet.columns = cols;
+
+        // Insert Rows
+        for (let i = 0; i < allEmployeesData.length; i++) {
+          const emp = allEmployeesData[i];
+          const currentRowNumber = i + 2;
+
+          const rowData = {
             unique_id: emp.unique_id || "",
             name: emp.name || "",
             category: emp.category || "",
@@ -870,8 +951,39 @@
             notes: emp.notes || "",
             emergency_name: emp.emergency_name ? `${emp.emergency_name} (${emp.emergency_relation || ""})` : "",
             emergency_mobile: emp.emergency_mobile || "",
-          });
-        });
+          };
+
+          if (withPhoto) {
+            rowData.photo = "";
+          }
+
+          worksheet.addRow(rowData);
+
+          // Embed photo if option is selected
+          if (withPhoto && emp.image_path) {
+            const imgData = await fetchImageAsBase64(emp.image_path);
+            if (imgData) {
+              const imageId = workbook.addImage({
+                base64: imgData.base64,
+                extension: imgData.extension,
+              });
+
+              const maxBox = 36;
+              const ratio = Math.min(maxBox / imgData.width, maxBox / imgData.height);
+              const imgW = Math.round(imgData.width * ratio);
+              const imgH = Math.round(imgData.height * ratio);
+
+              const colPad = Math.max(0, (60 - imgW) / 2) / 60;
+              const rowPad = Math.max(0, (46 - imgH) / 2) / 46;
+
+              worksheet.addImage(imageId, {
+                tl: { col: 1 + colPad, row: (currentRowNumber - 1) + rowPad },
+                ext: { width: imgW, height: imgH },
+                editAs: "oneCell",
+              });
+            }
+          }
+        }
 
         const headerRow = worksheet.getRow(1);
         headerRow.height = 28;
@@ -886,7 +998,7 @@
 
         worksheet.eachRow((row, rowNumber) => {
           if (rowNumber > 1) {
-            row.height = 20;
+            row.height = withPhoto ? 35 : 20; // ഫോട്ടോ ഇല്ലാത്തപ്പോൾ നോർമൽ ഒതുങ്ങിയ ഹൈറ്റ്
             row.eachCell((cell) => {
               cell.alignment = { vertical: "middle" };
               cell.font = { name: "Arial", size: 10 };
@@ -897,7 +1009,8 @@
 
         const buffer = await workbook.xlsx.writeBuffer();
         const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-        saveAs(blob, `Employee_Directory_${new Date().toISOString().split("T")[0]}.xlsx`);
+        const fileSuffix = withPhoto ? "With_Photos" : "Data";
+        saveAs(blob, `Employee_Directory_${fileSuffix}_${new Date().toISOString().split("T")[0]}.xlsx`);
         showToast("Excel exported successfully!");
       }
 
