@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <title>Employee Tracker Dashboard</title>
+    <!-- ExcelJS & FileSaver Libraries -->
+    <script src="/node_xlsx_scripts/exceljs.min.js"></script>
+    <script src="/node_xlsx_scripts/FileSaver.min.js"></script>
+    <script src="/node_xlsx_scripts/sweetalert2.all.min.js"></script>
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', sans-serif; }
         body { background: #f4f7f6; margin: 0; padding: 20px; }
@@ -36,6 +40,18 @@
         .form-group { margin-bottom: 12px; }
         .form-group label { display: block; font-weight: 600; font-size: 13px; margin-bottom: 4px; color: #333; }
         .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        .dynamic-textarea {
+            width: 100%;
+            min-height: 38px;
+            field-sizing: content; /* കണ്ടന്റ് അനുസരിച്ച് തനിയെ താഴേക്ക് വലുതാകും */
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+            resize: none;
+            line-height: 1.4;
+            box-sizing: border-box;
+        }
         
         /* New 2-Column Grid for Modals */
         .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
@@ -71,7 +87,8 @@
         </div>
         <button class="search-btn" onclick="toggleSearch()" title="Search">🔍</button>
         <button class="btn" onclick="openAddModal()">+ Add New Staff</button>
-        <button class="btnx" onclick="window.location.href='../staff_salary/'"">Staff Salary</button>
+        <button class="btn" style="background: #16a34a;" onclick="exportStaffToExcel()" title="Export all staff to Excel">📊 Export Excel</button>
+        <button class="btnx" onclick="window.location.href='../staff_salary/'">Staff Salary</button>
         <button class="btn btn-primary" onclick="window.location.href='../admin/index.html'">Admin Panel</button>
     </div>
 </div>
@@ -81,7 +98,7 @@
     <button onclick="filterStaff('Director', this)">Directors <span id="count-Director">(0)</span></button>
     <button onclick="filterStaff('Site Co', this)">Site Co <span id="count-SiteCo">(0)</span></button>
     <button onclick="filterStaff('Field Co', this)">Field Co <span id="count-FieldCo">(0)</span></button>
-    <button onclick="filterStaff('Office Admin', this)">Office Admin <span id="count-OfficeAdmin">(0)</span></button>
+    <button onclick="filterStaff('Office Staff', this)">Office Staff <span id="count-OfficeAdmin">(0)</span></button>
     <button onclick="filterStaff('Office Accounts', this)">Office Accounts <span id="count-OfficeAccounts">(0)</span></button>
     <button onclick="filterStaff('Released', this)" style="background: #dc3545; color: white;">Released <span id="count-Released">(0)</span></button>
 </div>
@@ -100,13 +117,12 @@
 <div id="toast"></div>
 
 <script>
-    // Authentication Check
     const user = localStorage.getItem('emp_user');
     if (!user) {
         window.location.href = '../index.html?redirect=' + encodeURIComponent(window.location.href); 
     }
 
-    let allEmployeesData = []; // സ്റ്റാഫ് ഡാറ്റ മുഴുവനായും സൂക്ഷിക്കാൻ
+    let allEmployeesData = []; 
 
     document.addEventListener('DOMContentLoaded', () => fetchAllStaff());
 
@@ -117,7 +133,6 @@
         setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 3000);
     }
 
-    // Date Formatter (eg: 2026 May 26)
     function formatDate(dateStr) {
         if (!dateStr) return 'N/A';
         const d = new Date(dateStr);
@@ -125,110 +140,86 @@
         return `${d.getFullYear()} ${months[d.getMonth()]} ${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // Ensure proper date input format (YYYY-MM-DD)
     function toInputDate(dateStr) {
         if (!dateStr) return '';
         const d = new Date(dateStr);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
 
-    // ഡാറ്റാബേസിൽ നിന്നും ഒരിക്കൽ മാത്രം എല്ലാ സ്റ്റാഫിനെയും എടുക്കുന്നു
     async function fetchAllStaff() {
         const res = await fetch(`/api/employee-tracker/all?category=All`);
         const data = await res.json();
         if (data.success) {
             allEmployeesData = data.employees;
-            updateCounts(); // പുതിയ ഫംഗ്ഷൻ വിളിക്കുന്നു 
+            updateCounts();  
             renderStaff('All');
         }
     }
 
-    // ഓരോ കാറ്റഗറിയിലെയും കൗണ്ട് കണ്ടെത്തി അപ്ഡേറ്റ് ചെയ്യാനുള്ള ഫംഗ്ഷൻ
     function updateCounts() {
-        const counts = {
-            'All': allEmployeesData.length,
-            'Director': 0,
-            'Site Co': 0,
-            'Field Co': 0,
-            'Office Admin': 0,
-            'Office Accounts': 0,
-            'Released': 0
-        };
-
-        // മൊത്തം ഡാറ്റയിൽ നിന്നും ഓരോ കാറ്റഗറിയുടെയും എണ്ണം എടുക്കുന്നു
+        const counts = { 'All': allEmployeesData.length, 'Director': 0, 'Site Co': 0, 'Field Co': 0, 'Office Staff': 0, 'Office Accounts': 0, 'Released': 0 };
         allEmployeesData.forEach(emp => {
-            if (counts[emp.category] !== undefined) {
-                counts[emp.category]++;
+            const cat = (emp.category === 'Office Admin') ? 'Office Staff' : emp.category;
+            if (counts[cat] !== undefined) {
+                counts[cat]++;
             }
         });
-
-        // HTML-ലെ സ്പാനുകളിലേക്ക് കൗണ്ട് നൽകുന്നു
         document.getElementById('count-All').innerText = `(${counts['All']})`;
         document.getElementById('count-Director').innerText = `(${counts['Director']})`;
         document.getElementById('count-SiteCo').innerText = `(${counts['Site Co']})`;
         document.getElementById('count-FieldCo').innerText = `(${counts['Field Co']})`;
-        document.getElementById('count-OfficeAdmin').innerText = `(${counts['Office Admin']})`;
+        document.getElementById('count-OfficeAdmin').innerText = `(${counts['Office Staff']})`;
         document.getElementById('count-OfficeAccounts').innerText = `(${counts['Office Accounts']})`;
         document.getElementById('count-Released').innerText = `(${counts['Released']})`;
     }
 
-    // ഡാറ്റ സേവ് ചെയ്യുമ്പോഴും ഡിലീറ്റ് ചെയ്യുമ്പോഴും ഇത് വിളിക്കാം
     async function loadStaff() {
         await fetchAllStaff();
     }
 
-    // കാറ്റഗറി ഫിൽറ്റർ (ഉദാ: Site Co ക്ലിക്ക് ചെയ്യുമ്പോൾ)
     function filterStaff(category, btn) {
         document.querySelectorAll('.filters button').forEach(b => b.classList.remove('active'));
         if(btn) btn.classList.add('active');
-        
-        // സെർച്ച് റീസെറ്റ് ചെയ്യുക
         document.getElementById('searchInput').value = '';
         document.getElementById('suggestionBox').style.display = 'none';
-        
         renderStaff(category);
     }
 
-    // ഡാറ്റ സ്ക്രീനിൽ കാണിക്കാൻ (All ആയാലും കാറ്റഗറി ആയാലും)
     function renderStaff(filterCategory, specificData = null) {
         const container = document.getElementById('staffContainer');
         container.innerHTML = '';
         
-        // സെർച്ച് റിസൾട്ട് ആണെങ്കിൽ അത് എടുക്കുക, അല്ലെങ്കിൽ ഫിൽറ്റർ ചെയ്തത് എടുക്കുക
         let displayData = specificData ? specificData : allEmployeesData;
-        
         if (filterCategory !== 'All' && !specificData) {
             displayData = displayData.filter(emp => emp.category === filterCategory);
         }
-
         if (displayData.length === 0) {
             container.innerHTML = '<p style="padding:20px; font-weight:bold; color:#dc3545;">No staff found in this section.</p>';
             return;
         }
 
-        const categories = ['Director', 'Site Co', 'Field Co', 'Office Admin', 'Office Accounts', 'Released'];
+        const categories = ['Director', 'Site Co', 'Field Co', 'Office Staff', 'Office Accounts', 'Released'];
         const grouped = {};
         categories.forEach(c => grouped[c] = []);
 
         displayData.forEach(emp => {
-            if(grouped[emp.category] !== undefined) {
-                grouped[emp.category].push(emp);
+            // Office Admin ആണെങ്കിൽ പോലും Office Staff ആയി ഗ്രൂപ്പ് ചെയ്യുന്നു
+            const cat = (emp.category === 'Office Admin') ? 'Office Staff' : emp.category;
+            if(grouped[cat] !== undefined) {
+                grouped[cat].push(emp);
             } else {
-                grouped[emp.category] = [emp];
+                grouped[cat] = [emp];
             }
         });
 
         for (const [cat, emps] of Object.entries(grouped)) {
             if (emps && emps.length > 0) {
-                // കാറ്റഗറിക്ക് ഉള്ളിൽ ഐഡി വെച്ച് കൃത്യമായി ഓർഡർ ചെയ്യുന്നു
                 emps.sort((a, b) => (a.unique_id || '').localeCompare(b.unique_id || ''));
-
                 let sectionHtml = `
                     <div class="category-section" style="margin-bottom: 40px;">
                         <h3 style="color: #2c3e50; border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">${cat}</h3>
                         <div class="grid">
                 `;
-                
                 emps.forEach(emp => {
                     const siteInfo = emp.site_name ? `<p style="color:#0284c7; font-weight:600;">📍 ${emp.site_name}</p>` : '';
                     const vehicleInfo = (emp.vehicle_model || emp.plate_no) ? `<p style="font-size:12px; color:#475569;">🚗 ${emp.vehicle_model || ''} ${emp.plate_no ? `(${emp.plate_no})` : ''}</p>` : '';
@@ -251,7 +242,6 @@
         }
     }
 
-    // --- Search & Suggestion Functionality ---
     function toggleSearch() {
         const input = document.getElementById('searchInput');
         input.classList.toggle('show');
@@ -260,15 +250,12 @@
         } else {
             input.value = '';
             document.getElementById('suggestionBox').style.display = 'none';
-            
-            // നിലവിൽ സെലക്ട് ചെയ്ത ടാബ് തിരികെ കൊണ്ടുവരാൻ
             const activeBtn = document.querySelector('.filters button.active');
             const cat = activeBtn ? (activeBtn.innerText === 'Directors' ? 'Director' : activeBtn.innerText) : 'All';
             renderStaff(cat);
         }
     }
 
-    // ടൈപ്പ് ചെയ്യുമ്പോൾ സജഷൻസ് കാണിക്കാൻ
     function showSuggestions() {
         const val = document.getElementById('searchInput').value.toLowerCase();
         const box = document.getElementById('suggestionBox');
@@ -292,7 +279,6 @@
                 const div = document.createElement('div');
                 div.className = 'suggestion-item';
                 div.innerHTML = `<b>${emp.unique_id}</b> - ${emp.name}`;
-                // സജഷനിൽ ക്ലിക്ക് ചെയ്താൽ ആ വ്യക്തിയെ മാത്രം കാണിക്കും
                 div.onclick = () => {
                     document.getElementById('searchInput').value = emp.name;
                     box.style.display = 'none';
@@ -304,45 +290,43 @@
         } else {
             box.style.display = 'none';
         }
-        
-        // ടൈപ്പ് ചെയ്യുമ്പോഴും സ്ക്രീനിലെ കാർഡുകൾ അപ്ഡേറ്റ് ആവാൻ 
         renderStaff('All', matches);
     }
 
-
-
-// Open Add Staff Modal (2-Column Layout)
     function openAddModal() {
-    stagedDocuments = []; // Clear previous docs
-
-    document.getElementById('modalBody').innerHTML = `
-        <h2>Add New Staff</h2>
-        <form id="addStaffForm" onsubmit="submitStaff(event)">
+        stagedDocuments = [];
+        document.getElementById('modalBody').innerHTML = `
+            <h2>Add New Staff</h2>
+            <form id="addStaffForm" onsubmit="submitStaff(event)">
                 <div class="form-row">
                     <div class="form-group"><label>Full Name</label><input type="text" name="name" required></div>
                     <div class="form-group"><label>Division / Category</label>
-                        <select name="category" required>
+                        <select name="category" id="addCategorySelect" onchange="toggleSiteNameField('addCategorySelect', 'addSiteNameBox'); updateDesignationOptions('addCategorySelect', 'addDesignationSelect');" required>
                             <option value="Director">Director</option>
                             <option value="Site Co">Site Co</option>
                             <option value="Field Co">Field Co</option>
-                            <option value="Office Admin">Office Admin</option>
+                            <option value="Office Staff">Office Staff</option>
                             <option value="Office Accounts">Office Accounts</option>
                         </select>
                     </div>
-                    <div class="form-group"><label>Site Name</label><input type="text" name="site_name" placeholder="e.g. Bisha, Afif"></div>
-                    <div class="form-group"><label>Designation</label><input type="text" name="designation"></div>
+                    <div class="form-group" id="addSiteNameBox" style="display:none;"><label>Site Name</label><input type="text" name="site_name" placeholder="e.g. Bisha, Afif"></div>
+                    <div class="form-group"><label>Designation</label>
+                        <select name="designation" id="addDesignationSelect" onchange="handleDesignationChange(this, 'addCategorySelect')"></select>
+                    </div>
                     <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" required></div>
                     <div class="form-group"><label>Mobile No</label><input type="text" name="mobile"></div>
                     <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile"></div>
-                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" placeholder="e.g. Hilux, D-Max"></div>
-                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" placeholder="e.g. 5974 BVA"></div>
                     <div class="form-group"><label>Passport No</label><input type="text" name="passport_no"></div>
-                    <div class="form-group"><label>Staff Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
+                    <div class="form-group"><label>Address</label><textarea name="address" class="dynamic-textarea" placeholder="Address..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea></div>
+                    <div class="form-group"><label>Notes</label><textarea name="notes" class="dynamic-textarea" placeholder="Notes..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'"></textarea></div>
+                    <div class="form-group full-width"><label>Staff Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
                 </div>
-                
+
+                <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Vehicle Provided Details</h4>
                 <div class="form-row">
-                    <div class="form-group full-width"><label>Address</label><textarea name="address" rows="2"></textarea></div>
-                    <div class="form-group full-width"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" placeholder="e.g. Hilux"></div>
+                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" placeholder="e.g. 5974 BVA"></div>
+                    <div class="form-group"><label>Received Date</label><input type="date" name="vehicle_purchase_date"></div>
                 </div>
 
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Emergency Contact</h4>
@@ -372,29 +356,25 @@
                 <button type="submit" id="submitBtn" class="btn" style="width:100%; margin-top:15px;">Save Staff</button>
             </form>
         `;
-
-        // Reset staged document list after UI is created
         renderStagedDocuments();
-
         document.getElementById('staffModal').style.display = 'flex';
+
+        // 🟢 Add options initialization
+        toggleSiteNameField('addCategorySelect', 'addSiteNameBox');
+        updateDesignationOptions('addCategorySelect', 'addDesignationSelect');
     }
 
-    // Open Edit Staff Modal (2-Column Layout)
     async function openEditModal(id) {
+        stagedDocuments = [];
+        const res = await fetch(`/api/employee-tracker/details/${id}`);
+        const data = await res.json();
+        if (!data.success) return;
 
-    // Clear previously staged documents
-    stagedDocuments = [];
+        const emp = data.employee;
+        const docs = data.documents || []; 
 
-    const res = await fetch(`/api/employee-tracker/details/${id}`);
-    const data = await res.json();
-
-    if (!data.success) return;
-
-    const emp = data.employee;
-    const docs = data.documents || []; 
-
-    window.currentEmpCategory = emp.category;
-    window.currentEmpSiteName = (emp.site_name || '').trim();
+        window.currentEmpCategory = emp.category;
+        window.currentEmpSiteName = (emp.site_name || '').trim();
 
         document.getElementById('modalBody').innerHTML = `
             <h2>Edit Staff (${emp.unique_id})</h2>
@@ -402,18 +382,19 @@
                 <div class="form-row">
                     <div class="form-group"><label>Full Name</label><input type="text" name="name" value="${emp.name || ''}" required></div>
                     <div class="form-group"><label>Division / Category</label>
-                        <select name="category" id="categorySelect" onchange="checkRoleOrSiteChange()" required>
+                        <select name="category" id="categorySelect" onchange="toggleSiteNameField('categorySelect', 'editSiteNameBox'); updateDesignationOptions('categorySelect', 'editDesignationSelect'); checkRoleOrSiteChange();" required>
                             <option value="Director" ${emp.category === 'Director' ? 'selected' : ''}>Director</option>
                             <option value="Site Co" ${emp.category === 'Site Co' ? 'selected' : ''}>Site Co</option>
                             <option value="Field Co" ${emp.category === 'Field Co' ? 'selected' : ''}>Field Co</option>
-                            <option value="Office Admin" ${emp.category === 'Office Admin' ? 'selected' : ''}>Office Admin</option>
+                            <option value="Office Staff" ${(emp.category === 'Office Staff' || emp.category === 'Office Admin') ? 'selected' : ''}>Office Staff</option>
                             <option value="Office Accounts" ${emp.category === 'Office Accounts' ? 'selected' : ''}>Office Accounts</option>
                             <option value="Released" ${emp.category === 'Released' ? 'selected' : ''}>Released</option>
                         </select>
                     </div>
-                    <div class="form-group"><label>Site Name</label><input type="text" name="site_name" id="siteNameInput" value="${emp.site_name || ''}" oninput="checkRoleOrSiteChange()" placeholder="e.g. Bisha, Afif"></div>
+                    <div class="form-group" id="editSiteNameBox" style="${emp.category === 'Site Co' ? 'display:block;' : 'display:none;'}">
+                        <label>Site Name</label><input type="text" name="site_name" id="siteNameInput" value="${emp.site_name || ''}" oninput="checkRoleOrSiteChange()" placeholder="e.g. Bisha, Afif">
+                    </div>
                     
-                    <!-- Role or Site Change Box -->
                     <div id="roleChangeBox" class="full-width" style="display:none; background:#fff3cd; padding:10px; border-radius:5px; border:1px solid #ffeeba;">
                         <p id="roleChangeMsg" style="margin:0 0 8px 0; font-size:13px; color:#856404; font-weight:bold;">Change Detected! Enter dates:</p>
                         <div class="form-row">
@@ -421,23 +402,52 @@
                             <div class="form-group"><label id="newDateLabel">New Start Date</label><input type="date" name="new_start_date" id="new_start_date"></div>
                         </div>
                     </div>
+                    
                     <div id="releasedBox" class="full-width" style="display:${emp.category === 'Released' ? 'block' : 'none'}; background:#f8d7da; padding:10px; border-radius:5px; border:1px solid #f5c6cb;">
                         <div class="form-group"><label style="color:#721c24;">Released Date</label><input type="date" name="released_date" id="released_date" value="${toInputDate(emp.released_date) || ''}"></div>
                     </div>
 
-                    <div class="form-group"><label>Designation</label><input type="text" name="designation" value="${emp.designation || ''}"></div>
+                    <div class="form-group"><label>Designation</label>
+                        <select name="designation" id="editDesignationSelect" onchange="handleDesignationChange(this, 'categorySelect')"></select>
+                    </div>
                     <div class="form-group"><label>Joining Date</label><input type="date" name="joining_date" value="${toInputDate(emp.joining_date)}" required></div>
                     <div class="form-group"><label>Mobile No</label><input type="text" name="mobile" value="${emp.mobile || ''}"></div>
                     <div class="form-group"><label>Alt Mobile No</label><input type="text" name="alt_mobile" value="${emp.alt_mobile || ''}"></div>
-                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" value="${emp.vehicle_model || ''}" placeholder="e.g. Hilux, D-Max"></div>
-                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" value="${emp.plate_no || ''}" placeholder="e.g. 5974 BVA"></div>
                     <div class="form-group"><label>Passport No</label><input type="text" name="passport_no" value="${emp.passport_no || ''}"></div>
-                    <div class="form-group"><label>Update Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
+                    <div class="form-group"><label>Address</label><textarea name="address" class="dynamic-textarea" placeholder="Address..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.address || ''}</textarea></div>
+                    <div class="form-group"><label>Notes</label><textarea name="notes" class="dynamic-textarea" placeholder="Notes..." oninput="this.style.height='';this.style.height=this.scrollHeight+'px'">${emp.notes || ''}</textarea></div>
+                    <div class="form-group full-width"><label>Update Photo</label><input type="file" name="image" accept=".jpg, .jpeg, .png"></div>
                 </div>
 
+                <!-- VEHICLE SECTION IN EDIT -->
+                <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Vehicle Provided Details</h4>
                 <div class="form-row">
-                    <div class="form-group full-width"><label>Address</label><textarea name="address" rows="2">${emp.address || ''}</textarea></div>
-                    <div class="form-group full-width"><label>Notes</label><textarea name="notes" rows="2">${emp.notes || ''}</textarea></div>
+                    <div class="form-group"><label>Vehicle Model</label><input type="text" name="vehicle_model" value="${emp.vehicle_model || ''}"></div>
+                    <div class="form-group"><label>Plate No</label><input type="text" name="plate_no" value="${emp.plate_no || ''}"></div>
+                    <div class="form-group"><label>Received Date</label><input type="date" name="vehicle_purchase_date" value="${toInputDate(emp.vehicle_purchase_date)}"></div>
+                    
+                    <div class="form-group">
+                        <label style="color:#d39e00;">Vehicle Status Action</label>
+                        <select name="vehicle_action" onchange="toggleVehicleAction(this)" style="border:1px solid #d39e00;">
+                            <option value="none" selected>Running....</option>
+                            <option value="sold">Vehicle as Sold</option>
+                            <option value="replaced">Replace with New Vehicle</option>
+                            <option value="new_purchase">New Purchase (No active car currently)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="vehSoldBox" class="full-width" style="display:none; background:#f8d7da; padding:10px; border-radius:5px; margin-bottom:10px;">
+                    <div class="form-group"><label>Old Vehicle Sold Date</label><input type="date" name="vehicle_sold_date" id="vehicle_sold_date"></div>
+                </div>
+                
+                <div id="vehNewBox" class="full-width" style="display:none; background:#d1ecf1; padding:10px; border-radius:5px; margin-bottom:10px;">
+                    <p style="margin:0 0 10px 0; font-weight:bold; color:#0c5460;">New Vehicle Details:</p>
+                    <div class="form-row">
+                        <div class="form-group"><label>New Model</label><input type="text" name="new_vehicle_model"></div>
+                        <div class="form-group"><label>New Plate No</label><input type="text" name="new_plate_no"></div>
+                        <div class="form-group"><label>New Received Date</label><input type="date" name="new_vehicle_purchase_date"></div>
+                    </div>
                 </div>
 
                 <h4 style="margin:10px 0 5px 0; color:#007bff; border-bottom: 1px solid #ddd; padding-bottom: 5px;">Emergency Contact</h4>
@@ -454,32 +464,15 @@
                         <label style="font-weight:600; font-size:13px; margin-bottom:5px; display:block; color:#333;">Existing Documents (Click ✖ to Remove)</label>
                         <ul style="list-style:none; padding:0; margin:0;">
                             ${docs.map((d) => {
-    const fileName = (d.file_path || '').split('/').pop();
-
-    const match = fileName.match(/-(\d+)\.[^.]+$/);
-
-    const actualDocNumber = match
-        ? parseInt(match[1], 10)
-        : '';
-
-    return `
-        <li style="display:flex; justify-content:space-between; background:#fff; padding:6px 10px; margin-bottom:4px; border-radius:4px; font-size:13px; align-items:center; border:1px solid #ddd;">
-            <span>
-                <a href="${d.file_path}" target="_blank">
-                    ${d.doc_name}
-                </a>
-                <small>(${actualDocNumber})</small>
-            </span>
-
-            <button
-                type="button"
-                style="color:#dc3545; border:none; background:none; cursor:pointer; font-weight:bold; font-size:16px;"
-                onclick="deleteExistingDocument(${d.id}, ${emp.id})"
-            >✖</button>
-        </li>
-    `;
-}).join('')}
-
+                                const fileName = (d.file_path || '').split('/').pop();
+                                const match = fileName.match(/-(\d+)\.[^.]+$/);
+                                const actualDocNumber = match ? parseInt(match[1], 10) : '';
+                                return `
+                                    <li style="display:flex; justify-content:space-between; background:#fff; padding:6px 10px; margin-bottom:4px; border-radius:4px; font-size:13px; align-items:center; border:1px solid #ddd;">
+                                        <span><a href="${d.file_path}" target="_blank">${d.doc_name}</a> <small>(${actualDocNumber})</small></span>
+                                        <button type="button" style="color:#dc3545; border:none; background:none; cursor:pointer; font-weight:bold; font-size:16px;" onclick="deleteExistingDocument(${d.id}, ${emp.id})">✖</button>
+                                    </li>`;
+                            }).join('')}
                         </ul>
                     </div>
                 ` : '<p style="font-size:13px; color:#666;">No documents attached yet.</p>'}
@@ -517,10 +510,33 @@
                 <button type="submit" id="updateBtn" class="btn btn-warning" style="width:100%; margin-top:15px;">Update Staff</button>
             </form>
         `;
+        
+        // 🟢 Edit options initialization with existing data
+        toggleSiteNameField('categorySelect', 'editSiteNameBox');
+        updateDesignationOptions('categorySelect', 'editDesignationSelect', emp.designation || '');
+        checkRoleOrSiteChange();
     }
 
+    function toggleVehicleAction(sel) {
+        const soldBox = document.getElementById('vehSoldBox');
+        const newBox = document.getElementById('vehNewBox');
+        const soldInput = document.getElementById('vehicle_sold_date');
 
-    // Reusable Upload Function with Progress Bar
+        if(sel.value === 'sold') {
+            soldBox.style.display = 'block'; newBox.style.display = 'none';
+            soldInput.required = true;
+        } else if(sel.value === 'replaced') {
+            soldBox.style.display = 'block'; newBox.style.display = 'block';
+            soldInput.required = true;
+        } else if(sel.value === 'new_purchase') {
+            soldBox.style.display = 'none'; newBox.style.display = 'block';
+            soldInput.required = false;
+        } else {
+            soldBox.style.display = 'none'; newBox.style.display = 'none';
+            soldInput.required = false;
+        }
+    }
+
     function uploadDataWithProgress(url, formData, btnId) {
         return new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
@@ -559,9 +575,8 @@
         e.preventDefault();
         const formData = new FormData(e.target);
         
-        // Staged ഫയലുകൾ ഒന്നിനുപുറകെ ഒന്നായി ഫോമിലേക്ക് ചേർക്കുന്നു
         stagedDocuments.forEach(doc => {
-            formData.append('documents', doc.file); // ശ്രദ്ധിക്കുക: പേര് 'documents' എന്നാണ്
+            formData.append('documents', doc.file); 
             formData.append('doc_names', doc.name);
         });
 
@@ -580,59 +595,30 @@
     }
 
     async function updateStaff(e, id) {
-    e.preventDefault();
+        e.preventDefault();
+        const formData = new FormData(e.target);
 
-    const formData = new FormData(e.target);
+        stagedDocuments.forEach(doc => {
+            formData.append('documents', doc.file);
+            formData.append('doc_names', doc.name);
+        });
 
-    // Add staged documents to FormData
-    stagedDocuments.forEach(doc => {
-        formData.append('documents', doc.file);
-        formData.append('doc_names', doc.name);
-    });
-
-    // Debug: Check files before sending
-    console.log("Files being uploaded:");
-
-    for (const [key, value] of formData.entries()) {
-        if (value instanceof File) {
-            console.log(
-                "File:",
-                key,
-                value.name,
-                value.size,
-                value.type
-            );
+        try {
+            const data = await uploadDataWithProgress(`/api/employee-tracker/edit/${id}`, formData, 'updateBtn');
+            if (data.success) {
+                showToast("Staff updated successfully!");
+                stagedDocuments = [];
+                closeModal();
+                await loadStaff();
+            } else {
+                showToast("Error: " + data.message);
+            }
+        } catch (err) {
+            console.error("Update Error:", err);
+            showToast("Error updating data!");
         }
     }
-
-    try {
-        const data = await uploadDataWithProgress(
-            `/api/employee-tracker/edit/${id}`,
-            formData,
-            'updateBtn'
-        );
-
-        if (data.success) {
-            showToast("Staff updated successfully!");
-
-            // Clear staged documents
-            stagedDocuments = [];
-
-            closeModal();
-            await loadStaff();
-
-        } else {
-            showToast("Error: " + data.message);
-        }
-
-    } catch (err) {
-        console.error("Update Error:", err);
-        showToast("Error updating data!");
-    }
-}
     
-
-    // View Details Modal with Timeline History
     async function viewDetails(id) {
         const res = await fetch(`/api/employee-tracker/details/${id}`);
         const data = await res.json();
@@ -640,58 +626,50 @@
 
         const emp = data.employee;
         const history = data.history;
+        const vehHistory = data.vehicle_history;
         const docs = data.documents;
 
         let docSectionHtml = '';
         if (docs && docs.length > 0) {
             let docHtml = docs.map((d) => {
-    const fileName = (d.file_path || '').split('/').pop();
-
-    // Extract number from:
-    // EMP-001-1.pdf
-    // EMP-001-10.pdf
-    const match = fileName.match(/-(\d+)\.[^.]+$/);
-
-    const actualDocNumber = match
-        ? parseInt(match[1], 10)
-        : '';
-
-    return `
-        <li>
-            ${actualDocNumber} &nbsp;&nbsp;
-            <a href="${d.file_path}" target="_blank">
-                ${d.doc_name}
-            </a>
-        </li>
-    `;
-}).join('');
-
-            docSectionHtml = `
-                <h4 style="margin:10px 0 5px 0; color:#007bff;">Attached Documents</h4>
-                <ul>${docHtml}</ul>
-            `;
+                const fileName = (d.file_path || '').split('/').pop();
+                const match = fileName.match(/-(\d+)\.[^.]+$/);
+                const actualDocNumber = match ? parseInt(match[1], 10) : '';
+                return `<li>${actualDocNumber} &nbsp;&nbsp; <a href="${d.file_path}" target="_blank">${d.doc_name}</a></li>`;
+            }).join('');
+            docSectionHtml = `<h4 style="margin:10px 0 5px 0; color:#007bff;">Attached Documents</h4><ul>${docHtml}</ul>`;
         }
         
-        // Timeline Generation
         let timelineHtml = '';
         if (history && history.length > 0) {
             history.forEach(h => {
-                timelineHtml += `<li style="margin-bottom:8px;"><b>${formatDate(h.start_date)} - ${formatDate(h.end_date)}</b> : ${h.previous_category} ${h.previous_designation ? `(${h.previous_designation})` : ''}</li>`;
+                const sitePart = h.previous_site ? ` | Site: ${h.previous_site}` : '';
+                timelineHtml += `<li style="margin-bottom:8px;"><b>${formatDate(h.start_date)} - ${formatDate(h.end_date)}</b> : ${h.previous_category} ${h.previous_designation ? `(${h.previous_designation})` : ''}${sitePart}</li>`;
             });
         }
-        // Append Current Role
-        timelineHtml += `<li style="margin-bottom:8px; color:green;"><b>${formatDate(emp.joining_date)} - Present</b> : ${emp.category} ${emp.designation ? `(${emp.designation})` : ''}</li>`;
+        const curSitePart = emp.site_name ? ` | Site: ${emp.site_name}` : '';
+        timelineHtml += `<li style="margin-bottom:8px; color:green;"><b>${formatDate(emp.joining_date)} - Present</b> : ${emp.category} ${emp.designation ? `(${emp.designation})` : ''}${curSitePart}</li>`;
+
+        let vehHtml = '';
+        if (vehHistory && vehHistory.length > 0) {
+            vehHistory.forEach(v => {
+                const soldStr = v.status === 'Sold' ? ` | <span style="color:#dc3545">Sold: ${formatDate(v.sold_date)}</span>` : ' | <span style="color:#28a745">(Active)</span>';
+                vehHtml += `<li style="margin-bottom:8px;"><b>${v.plate_no || 'N/A'}</b> (${v.vehicle_model || 'N/A'}) - Purchased: ${formatDate(v.purchase_date)}${soldStr}</li>`;
+            });
+        }
 
         document.getElementById('modalBody').innerHTML = `
             <div style="text-align:center;">
                 <img src="${emp.image_path || 'https://via.placeholder.com/80'}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;">
                 <h2>${emp.name}</h2>
-                <p style="color:#007bff; font-weight:bold;">${emp.unique_id} - ${emp.designation || emp.category}</p>
+                <p style="color:#007bff; font-weight:bold; margin-bottom:5px;">${emp.unique_id} - ${emp.designation || emp.category}</p>
+                ${emp.site_name ? `<p style="color:#0284c7; font-weight:bold; margin-top:0;">📍 Site: ${emp.site_name}</p>` : ''}
             </div>
             <hr>
             <p><b>Mobile:</b> ${emp.mobile || 'N/A'} | <b>Alt Mobile:</b> ${emp.alt_mobile || 'N/A'}</p>
-            <p><b>Address:</b> ${emp.address || 'N/A'}</p>
+            <p><b>Vehicle:</b> ${emp.vehicle_model || 'N/A'} | <b>Plate No:</b> ${emp.plate_no || 'N/A'}</p>
             <p><b>Passport No:</b> ${emp.passport_no || 'N/A'}</p>
+            <p><b>Address:</b> ${emp.address || 'N/A'}</p>
             <p><b>Notes:</b> ${emp.notes || 'N/A'}</p>
             
             <h4 style="margin:10px 0 5px 0; color:#007bff;">Emergency Contact</h4>
@@ -700,8 +678,10 @@
             
             ${docSectionHtml}
 
-            <h4 style="margin:10px 0 5px 0; color:#007bff;">Position History Log</h4>
-            <ul style="list-style-type: none; padding-left: 0;">${timelineHtml}</ul>
+            ${vehHtml ? `<h4 style="margin:10px 0 5px 0; color:#007bff;">Vehicle History Log</h4><ul style="list-style-type: none; padding-left: 0; font-size:13px;">${vehHtml}</ul>` : ''}
+
+            <h4 style="margin:10px 0 5px 0; color:#007bff;">Position & Site History Log</h4>
+            <ul style="list-style-type: none; padding-left: 0; font-size:13px;">${timelineHtml}</ul>
 
             <div style="margin-top: 20px; display: flex; justify-content: space-between;">
                 <button class="btn btn-warning" onclick="openEditModal(${emp.id})">✏️ Edit Staff</button>
@@ -711,7 +691,6 @@
         document.getElementById('staffModal').style.display = 'flex';
     }
 
-    // Detect if category OR site name is changed
     function checkRoleOrSiteChange() {
         const catElem = document.getElementById('categorySelect');
         const siteElem = document.getElementById('siteNameInput');
@@ -739,7 +718,6 @@
             document.getElementById('new_start_date').required = false;
         }
 
-        // Released Date Box
         if (catElem && catElem.value === 'Released') {
             releasedBox.style.display = 'block';
             document.getElementById('released_date').required = true;
@@ -748,7 +726,6 @@
             document.getElementById('released_date').required = false;
         }
     }
-
 
     function deleteStaff(id) {
         document.getElementById('modalBody').innerHTML = `
@@ -803,7 +780,7 @@
         }
     }
 
-    let stagedDocuments = []; // ഡോക്യുമെന്റുകൾ താൽക്കാലികമായി സൂക്ഷിക്കാൻ
+    let stagedDocuments = []; 
 
     function addStagedDocument() {
         const nameInput = document.getElementById('tempDocName');
@@ -819,7 +796,6 @@
 
         stagedDocuments.push({ name: docName, file: file });
 
-        // ഫീൽഡുകൾ ക്ലിയർ ചെയ്യുന്നു
         nameInput.value = '';
         fileInput.value = '';
         
@@ -874,6 +850,220 @@
 
     function closeModal() {
         document.getElementById('staffModal').style.display = 'none';
+    }
+
+    async function exportStaffToExcel() {
+        if (!allEmployeesData || allEmployeesData.length === 0) {
+            showToast("No employee data to export!");
+            return;
+        }
+
+        if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") {
+            showToast("Excel libraries not loaded!");
+            return;
+        }
+
+        showToast("Generating Excel file...");
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Employees", {
+            views: [{ showGridLines: true, zoomScale: 80 }]
+        });
+
+        // Define Headers
+        worksheet.columns = [
+            { header: "Unique ID", key: "unique_id", width: 14 },
+            { header: "Full Name", key: "name", width: 25 },
+            { header: "Category", key: "category", width: 18 },
+            { header: "Site Name", key: "site_name", width: 20 },
+            { header: "Designation", key: "designation", width: 22 },
+            { header: "Joining Date", key: "joining_date", width: 15 },
+            { header: "Released Date", key: "released_date", width: 15 },
+            { header: "Mobile No", key: "mobile", width: 18 },
+            { header: "Alt Mobile No", key: "alt_mobile", width: 18 },
+            { header: "Passport No", key: "passport_no", width: 18 },
+            { header: "Vehicle Model", key: "vehicle_model", width: 20 },
+            { header: "Plate No", key: "plate_no", width: 15 },
+            { header: "Received Date", key: "vehicle_purchase_date", width: 16 },
+            { header: "Address", key: "address", width: 30 },
+            { header: "Notes", key: "notes", width: 30 },
+            { header: "Emergency Contact", key: "emergency_name", width: 20 },
+            { header: "Emergency Mobile", key: "emergency_mobile", width: 18 }
+        ];
+
+        // Insert Rows
+        allEmployeesData.forEach(emp => {
+            worksheet.addRow({
+                unique_id: emp.unique_id || "",
+                name: emp.name || "",
+                category: emp.category || "",
+                site_name: emp.site_name || "",
+                designation: emp.designation || "",
+                joining_date: emp.joining_date ? toInputDate(emp.joining_date) : "",
+                released_date: (emp.category === 'Released' && emp.released_date) ? toInputDate(emp.released_date) : "",
+                mobile: emp.mobile || "",
+                alt_mobile: emp.alt_mobile || "",
+                passport_no: emp.passport_no || "",
+                vehicle_model: emp.vehicle_model || "",
+                plate_no: emp.plate_no || "",
+                vehicle_purchase_date: emp.vehicle_purchase_date ? toInputDate(emp.vehicle_purchase_date) : "",
+                address: emp.address || "",
+                notes: emp.notes || "",
+                emergency_name: emp.emergency_name ? `${emp.emergency_name} (${emp.emergency_relation || ''})` : "",
+                emergency_mobile: emp.emergency_mobile || ""
+            });
+        });
+
+        // Header Styling: Black Fill, White Text, Bold, Center Alignment
+        const headerRow = worksheet.getRow(1);
+        headerRow.height = 28;
+        headerRow.eachCell((cell) => {
+            cell.font = { name: "Arial", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF000000" } };
+            cell.alignment = { horizontal: "center", vertical: "middle" };
+            cell.border = {
+                top: { style: "thin", color: { argb: "FF333333" } },
+                bottom: { style: "medium", color: { argb: "FF000000" } },
+                left: { style: "thin", color: { argb: "FF333333" } },
+                right: { style: "thin", color: { argb: "FF333333" } }
+            };
+        });
+
+        // Auto-filter for entire column range
+        worksheet.autoFilter = {
+            from: { row: 1, column: 1 },
+            to: { row: 1, column: worksheet.columns.length }
+        };
+
+        // Data Row Styling
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 1) {
+                row.height = 20;
+                row.eachCell((cell) => {
+                    cell.alignment = { vertical: "middle" };
+                    cell.font = { name: "Arial", size: 10 };
+                    cell.border = {
+                        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+                        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+                        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+                        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+                    };
+                });
+            }
+        });
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        saveAs(blob, `Employee_Directory_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+        showToast("Excel exported successfully!");
+    }
+
+    const defaultDesignations = {
+        'Director': ['Managing Director', 'Director'],
+        'Site Co': ['Co-Ordinator'],
+        'Field Co': ['Co-Ordinator'],
+        'Office Staff': ['Office Administration'],
+        'Office Accounts': ['Accountant', 'Jr Accountant']
+    };
+
+    function updateDesignationOptions(catSelectId, desigSelectId, selectedVal = '') {
+        const cat = document.getElementById(catSelectId).value;
+        const desigSelect = document.getElementById(desigSelectId);
+        if (!desigSelect) return;
+
+        desigSelect.innerHTML = '';
+        const list = defaultDesignations[cat] || [];
+
+        if (cat === 'Site Co' || cat === 'Field Co') {
+            const opt = document.createElement('option');
+            opt.value = 'Co-Ordinator';
+            opt.textContent = 'Co-Ordinator';
+            opt.selected = true;
+            desigSelect.appendChild(opt);
+        } else {
+            let matched = false;
+            list.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d;
+                opt.textContent = d;
+                if (d === selectedVal) { opt.selected = true; matched = true; }
+                desigSelect.appendChild(opt);
+            });
+
+            if (selectedVal && !matched && selectedVal !== 'Co-Ordinator') {
+                const customOpt = document.createElement('option');
+                customOpt.value = selectedVal;
+                customOpt.textContent = selectedVal;
+                customOpt.selected = true;
+                desigSelect.appendChild(customOpt);
+            }
+
+            const addOpt = document.createElement('option');
+            addOpt.value = '__add_new__';
+            addOpt.textContent = '+ Add New';
+            desigSelect.appendChild(addOpt);
+        }
+    }
+
+    async function handleDesignationChange(selectElem, catSelectId) {
+        if (selectElem.value === '__add_new__') {
+            // SweetAlert2 library load aayittundenkil athu upayogikkunnu
+            if (typeof Swal !== 'undefined') {
+                const { value: newDesig } = await Swal.fire({
+                    title: 'Add New Designation',
+                    input: 'text',
+                    inputPlaceholder: 'Enter Designation Name...',
+                    showCancelButton: true,
+                    confirmButtonText: 'Add',
+                    confirmButtonColor: '#007bff',
+                    cancelButtonColor: '#6c757d',
+                    target: document.getElementById('staffModal') || document.body,
+                    inputValidator: (value) => {
+                        if (!value || !value.trim()) {
+                            return 'Designation name is required!';
+                        }
+                    }
+                });
+
+                if (newDesig && newDesig.trim() !== '') {
+                    const val = newDesig.trim();
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = val;
+                    selectElem.insertBefore(opt, selectElem.lastElementChild);
+                    selectElem.value = val;
+                } else {
+                    updateDesignationOptions(catSelectId, selectElem.id);
+                }
+            } else {
+                // Fallback custom lightweight modal prompt
+                const val = window.prompt("Enter New Designation:");
+                if (val && val.trim() !== '') {
+                    const cleanVal = val.trim();
+                    const opt = document.createElement('option');
+                    opt.value = cleanVal;
+                    opt.textContent = cleanVal;
+                    selectElem.insertBefore(opt, selectElem.lastElementChild);
+                    selectElem.value = cleanVal;
+                } else {
+                    updateDesignationOptions(catSelectId, selectElem.id);
+                }
+            }
+        }
+    }
+
+    function toggleSiteNameField(catSelectId, siteBoxId) {
+        const cat = document.getElementById(catSelectId).value;
+        const siteBox = document.getElementById(siteBoxId);
+        if (!siteBox) return;
+        if (cat === 'Site Co') {
+            siteBox.style.display = 'block';
+        } else {
+            siteBox.style.display = 'none';
+            const input = siteBox.querySelector('input');
+            if (input) input.value = '';
+        }
     }
 </script>
 </body>
