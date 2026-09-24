@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Non-VAT Pending Difference Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+        * { box-sizing: border-box; text-decoration: none; }
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #f8fafc; 
+            color: #0f172a; 
+            margin: 0; 
+            padding: 0; 
+            font-size: 12px; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            transition: background-color 0.2s, color 0.2s;
+        }
+
+        .filter-icon {
+            cursor: pointer;
+            color: #94a3b8;
+            font-size: 10px;
+            margin-left: 5px;
+            display: inline-block;
+        }
+        .filter-icon:hover { color: #38bdf8; }
+        .filter-icon.filtered { color: #38bdf8; font-weight: 900; }
+
+        .filter-menu {
+            position: absolute;
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            padding: 10px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            z-index: 1000;
+            color: #0f2027;
+            display: none;
+            min-width: 200px;
+            text-align: left;
+        }
+        body.dark-mode .filter-menu {
+            background: #1e293b;
+            border-color: #334155;
+            color: #f8fafc;
+        }
+        .filter-menu label {
+            display: block;
+            padding: 4px 0;
+            font-size: 11.5px;
+            cursor: pointer;
+            color: #334155;
+        }
+        body.dark-mode .filter-menu label { color: #cbd5e1; }
+        .filter-menu input[type="text"] {
+            width: 100%;
+            padding: 5px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-bottom: 8px;
+            outline: none;
+        }
+        body.dark-mode .filter-menu input[type="text"] {
+            background: #0f172a;
+            border-color: #334155;
+            color: white;
+        }
+
+        body.dark-mode {
+            background-color: #0b1329;
+            color: #f1f5f9;
+        }
+        body.dark-mode .navbar { background: #081021; }
+        body.dark-mode .dashboard-table { background: #111e38; border-color: #1e293b; }
+        body.dark-mode .dashboard-table td { border-color: #1e293b; color: #e2e8f0; }
+        body.dark-mode .cell-sticky-supplier { background: #111e38 !important; color: #f8fafc !important; border-right-color: #334155 !important; }
+        body.dark-mode .cell-sticky-site { background: #111e38 !important; color: #cbd5e1 !important; border-right-color: #334155 !important; }
+        body.dark-mode .inactive-cell {
+            background: repeating-linear-gradient(45deg, #0b1329, #0b1329 6px, #111e38 6px, #111e38 12px) !important;
+        }
+
+        .navbar { 
+            background: #0f2027; 
+            color: white; 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            height: 54px; 
+            flex-shrink: 0; 
+        }
+        .nav-left { display: flex; align-items: center; gap: 15px; }
+        .nav-tools { display: flex; gap: 12px; align-items: center; }
+
+        .mode-toggle-group {
+            display: inline-flex;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            padding: 2px;
+            gap: 2px;
+        }
+        .mode-btn {
+            background: transparent;
+            color: #94a3b8;
+            border: none;
+            padding: 6px 12px;
+            font-size: 11.5px;
+            font-weight: 600;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: #3b82f6;
+            color: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .year-control { 
+            display: flex; 
+            align-items: center; 
+            background: #1e293b; 
+            border-radius: 5px; 
+            border: 1px solid #475569; 
+            overflow: hidden; 
+        }
+        .year-btn { 
+            background: transparent; color: white; border: none; padding: 6px 12px; cursor: pointer; font-size: 14px; font-weight: bold; 
+        }
+        .year-btn:hover { background: #334155; }
+        .year-select { 
+            background: transparent; color: white; border: none; font-size: 13px; font-weight: 600; padding: 5px 8px; outline: none; cursor: pointer; 
+        }
+        .year-select option { background: #1e293b; color: white; }
+
+        .search-box { 
+            padding: 6px 12px; border: 1px solid #475569; border-radius: 5px; background: #1e293b; color: white; outline: none; width: 220px; font-size: 12px; 
+        }
+
+        .btn-action { 
+            background: #3b82f6; color: white; padding: 6px 14px; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; 
+        }
+
+        .btn-theme-toggle {
+            background: #1e293b; color: #f59e0b; border: 1px solid #475569; padding: 6px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; justify-content: center;
+        }
+
+        .main-container { flex: 1; overflow: auto; padding: 15px; }
+        .dashboard-table {
+            width: max-content;
+            min-width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #cbd5e1;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .dashboard-table th, .dashboard-table td {
+            border-right: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
+            padding: 8px 10px;
+            vertical-align: middle;
+            text-align: center;
+        }
+        .dashboard-table th {
+            background: #1e293b;
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        .head-sticky-supplier { 
+            position: sticky; left: 0; z-index: 35 !important; background: #0f172a !important; min-width: 220px; max-width: 220px; width: 220px; 
+        }
+        .head-sticky-site { 
+            position: sticky; left: 220px; z-index: 35 !important; background: #0f172a !important; min-width: 130px; max-width: 130px; width: 130px; border-right: 2px solid #64748b !important; 
+        }
+
+        .cell-sticky-supplier { 
+            position: sticky; left: 0; background: #ffffff; z-index: 15; text-align: left !important; font-weight: 700; color: #0f172a; border-right: 1px solid #cbd5e1 !important; min-width: 220px; max-width: 220px; width: 220px; 
+        }
+        .cell-sticky-site { 
+            position: sticky; left: 220px; background: #ffffff; z-index: 12; text-align: left !important; font-weight: 600; border-right: 2px solid #94a3b8 !important; min-width: 130px; max-width: 130px; width: 130px; 
+        }
+
+        .sup-sn-badge {
+            background: #0284c7; color: white; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-right: 6px; display: inline-block;
+        }
+
+        /* 🔴 Positive Diff: Quick Dice > Vendor TS (Red) */
+        .diff-pos {
+            background-color: #fee2e2 !important;
+            color: #b91c1c !important;
+            font-weight: 800;
+        }
+        body.dark-mode .diff-pos {
+            background-color: rgba(239, 68, 68, 0.25) !important;
+            color: #fca5a5 !important;
+        }
+
+        /* 🟢 Negative Diff: Quick Dice < Vendor TS (Green) */
+        .diff-neg {
+            background-color: #dcfce7 !important;
+            color: #15803d !important;
+            font-weight: 800;
+        }
+        body.dark-mode .diff-neg {
+            background-color: rgba(34, 197, 94, 0.25) !important;
+            color: #86efac !important;
+        }
+
+        .inactive-cell {
+            background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 6px, #f1f5f9 6px, #f1f5f9 12px) !important;
+            pointer-events: none;
+        }
+
+        /* Login Modal */
+        .login-overlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 32, 39, 0.95); display: flex; justify-content: center; align-items: center; z-index: 10000; 
+        }
+        .login-box { background: white; padding: 30px; border-radius: 8px; width: 300px; text-align: center; }
+        #saveStatus { font-weight: 600; font-size: 12px; }
+        .status-saving { color: #f59e0b; }
+        .status-saved { color: #10b981; }
+        .status-error { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+    <!-- Login Modal -->
+    <div id="loginModal" class="login-overlay">
+        <div class="login-box">
+            <h2 style="margin-top:0;">Access Verification</h2>
+            <p style="font-size:12px; color:#64748b;">Please enter the secure access code.</p>
+            <input type="password" id="vatAccessCode" placeholder="Access Code" style="width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center;" onkeydown="if(event.key==='Enter') verifyLogin()">
+            <div id="loginError" style="color: #ef4444; font-size: 12px; margin-bottom: 10px; display: none;">Invalid Access Code</div>
+            <button onclick="verifyLogin()" class="btn-action" style="width: 100%; justify-content: center; padding: 10px; background: #10b981;">Unlock</button>
+        </div>
+    </div>
+
+    <!-- Top Ribbon -->
+    <div class="navbar">
+        <div class="nav-left">
+            <a href="index.html" style="color:white; font-size: 18px;" title="Back to Tracker">🔙</a>
+            <span style="font-size: 16px; font-weight: 600;">Pending Difference Tracker</span>
+            <span id="saveStatus"></span>
+        </div>
+
+        <div class="nav-tools">
+            <!-- View Toggle Switch -->
+            <div class="mode-toggle-group">
+                <button id="btnModeIndividual" class="mode-btn active" onclick="switchViewMode('individual')" title="Show month-wise differences">
+                    🗓️ Individual
+                </button>
+                <button id="btnModeTotal" class="mode-btn" onclick="switchViewMode('total')" title="Show overall year total difference">
+                    📊 Total
+                </button>
+            </div>
+
+            <input type="text" id="searchInput" class="search-box" placeholder="Search Supplier, Site..." onkeyup="renderDashboard()">
+
+            <div class="year-control">
+                <button class="year-btn" onclick="switchYear(-1)">◀</button>
+                <select id="yearSelect" class="year-select" onchange="fetchData()"></select>
+                <button class="year-btn" onclick="switchYear(1)">▶</button>
+            </div>
+
+            <button class="btn-action" onclick="clearAllFilters()" style="background: #475569;" title="Reset Filters">
+                🔄 Reset Filters
+            </button>
+            <button class="btn-action" onclick="exportToExcelDiff()" style="background: #16a34a;" title="Export difference data to Excel">
+                📊 Export Excel
+            </button>
+            <button id="themeToggleBtn" class="btn-theme-toggle" onclick="toggleTheme()" title="Switch Light/Dark Mode">🌙</button>
+            <a href="index.html" class="btn-action" style="background:#0284c7;">⚡ Main Tracker</a>
+        </div>
+    </div>
+
+    <!-- Dropdown Filter Menu Popup -->
+    <div id="filterMenu" class="filter-menu">
+        <input type="text" placeholder="Search values..." onkeyup="searchFilterItems(this)" />
+        <div id="filterCheckboxList" style="max-height: 250px; overflow-y: auto;"></div>
+        <div style="display: flex; gap: 5px; margin-top: 8px;">
+            <button style="flex: 1; padding: 4px; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer;" onclick="clearCurrentColumnFilter()">Clear</button>
+            <button style="flex: 1; padding: 4px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;" onclick="applyCurrentColumnFilter()">Apply</button>
+        </div>
+    </div>
+
+    <!-- ExcelJS & FileSaver Local Scripts -->
+    <script src="../../node_xlsx_scripts/exceljs.min.js"></script>
+    <script src="../../node_xlsx_scripts/FileSaver.min.js"></script>
+
+    <!-- Main Table Container -->
+    <div class="main-container">
+        <table class="dashboard-table" id="diffTable">
+            <thead id="diffTableHead"></thead>
+            <tbody id="diffTableBody">
+                <tr><td colspan="10" style="padding: 30px; text-align: center; color: #64748b;">Loading Difference Records...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const monthsFull = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        let rawData = [];
+        let vatCode = sessionStorage.getItem("vatTrackerCode") || "";
+        let currentYear = new Date().getFullYear();
+        let currentViewMode = "individual"; // 'individual' or 'total'
+
+        // 🟢 Column Filter States
+        let activeFilters = {
+            supplier: [],
+            site: []
+        };
+        let activeFilterCol = null;
+
+        function openFilterDropdown(e, colKey) {
+            e.stopPropagation();
+            activeFilterCol = colKey;
+            const menu = document.getElementById("filterMenu");
+            menu.style.display = "block";
+            menu.style.left = (e.clientX || e.pageX) + "px";
+            menu.style.top = ((e.clientY || e.pageY) + 15) + "px";
+
+            let uniqueValues = new Set();
+            rawData.forEach(sup => {
+                sup.sites.forEach(st => {
+                    if (colKey === "supplier") {
+                        uniqueValues.add(sup.supplier);
+                    } else if (colKey === "site") {
+                        uniqueValues.add(st.site_first_name.toUpperCase());
+                    }
+                });
+            });
+
+            const currentActive = activeFilters[colKey] || [];
+            const isAllChecked = currentActive.length === 0;
+
+            let html = `
+                <label style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 5px;">
+                    <input type="checkbox" id="filterSelectAll" ${isAllChecked ? 'checked' : ''} onchange="toggleFilterSelectAll(this)"> (Select All)
+                </label>
+            `;
+
+            Array.from(uniqueValues).sort().forEach(val => {
+                const checked = isAllChecked || currentActive.includes(val) ? "checked" : "";
+                html += `
+                    <label class="filter-item-label">
+                        <input type="checkbox" class="filter-cb" value="${escapeHTML(val)}" ${checked}> ${escapeHTML(val)}
+                    </label>
+                `;
+            });
+
+            document.getElementById("filterCheckboxList").innerHTML = html;
+        }
+
+        function toggleFilterSelectAll(masterCb) {
+            document.querySelectorAll("#filterCheckboxList .filter-cb").forEach(cb => {
+                if (cb.closest(".filter-item-label").style.display !== "none") {
+                    cb.checked = masterCb.checked;
+                }
+            });
+        }
+
+        function searchFilterItems(input) {
+            const term = input.value.toLowerCase();
+            document.querySelectorAll("#filterCheckboxList .filter-item-label").forEach(lbl => {
+                lbl.style.display = lbl.innerText.toLowerCase().includes(term) ? "block" : "none";
+            });
+        }
+
+        function applyCurrentColumnFilter() {
+            if (!activeFilterCol) return;
+            const cbs = document.querySelectorAll("#filterCheckboxList .filter-cb");
+            let selected = [];
+            cbs.forEach(cb => {
+                if (cb.checked) selected.push(cb.value);
+            });
+
+            if (selected.length === cbs.length) {
+                activeFilters[activeFilterCol] = [];
+            } else {
+                activeFilters[activeFilterCol] = selected;
+            }
+
+            document.getElementById("filterMenu").style.display = "none";
+            renderDashboard();
+        }
+
+        function clearCurrentColumnFilter() {
+            if (!activeFilterCol) return;
+            activeFilters[activeFilterCol] = [];
+            document.getElementById("filterMenu").style.display = "none";
+            renderDashboard();
+        }
+
+        function clearAllFilters() {
+            activeFilters = { supplier: [], site: [] };
+            document.getElementById("searchInput").value = "";
+            renderDashboard();
+        }
+
+        document.addEventListener("click", function (e) {
+            if (!e.target.closest("#filterMenu") && !e.target.closest(".filter-icon")) {
+                document.getElementById("filterMenu").style.display = "none";
+            }
+        });
+
+        function initTheme() {
+            const savedTheme = localStorage.getItem("nv_diff_theme") || "light";
+            if (savedTheme === "dark") {
+                document.body.classList.add("dark-mode");
+                document.getElementById("themeToggleBtn").innerText = "☀️";
+            } else {
+                document.body.classList.remove("dark-mode");
+                document.getElementById("themeToggleBtn").innerText = "🌙";
+            }
+        }
+        function toggleTheme() {
+            const isDark = document.body.classList.toggle("dark-mode");
+            localStorage.setItem("nv_diff_theme", isDark ? "dark" : "light");
+            document.getElementById("themeToggleBtn").innerText = isDark ? "☀️" : "🌙";
+        }
+        initTheme();
+
+        function switchViewMode(mode) {
+            currentViewMode = mode;
+            document.getElementById("btnModeIndividual").classList.toggle("active", mode === "individual");
+            document.getElementById("btnModeTotal").classList.toggle("active", mode === "total");
+            renderDashboard();
+        }
+
+        function initYearOptions() {
+            const select = document.getElementById("yearSelect");
+            select.innerHTML = "";
+            for (let y = currentYear - 3; y <= currentYear + 2; y++) {
+                let opt = document.createElement("option");
+                opt.value = y;
+                opt.textContent = y;
+                if (y === currentYear) opt.selected = true;
+                select.appendChild(opt);
+            }
+        }
+        initYearOptions();
+
+        if (vatCode) {
+            document.getElementById("loginModal").style.display = "none";
+            fetchData();
+        } else {
+            document.getElementById("loginModal").style.display = "flex";
+        }
+
+        function verifyLogin() {
+            const inputCode = document.getElementById("vatAccessCode").value.trim();
+            if(!inputCode) return;
+            vatCode = inputCode;
+            sessionStorage.setItem("vatTrackerCode", vatCode);
+            document.getElementById("loginModal").style.display = "none";
+            fetchData();
+        }
+
+        function triggerLoginError() {
+            sessionStorage.removeItem("vatTrackerCode");
+            vatCode = "";
+            document.getElementById("loginModal").style.display = "flex";
+            document.getElementById("loginError").style.display = "block";
+        }
+
+        function switchYear(step) {
+            const select = document.getElementById("yearSelect");
+            let targetYear = parseInt(select.value) + step;
+            let options = Array.from(select.options).map(o => parseInt(o.value));
+            if (options.includes(targetYear)) {
+                select.value = targetYear;
+                fetchData();
+            }
+        }
+
+        async function fetchData() {
+            currentYear = parseInt(document.getElementById("yearSelect").value);
+            showStatus("Loading...", "saving");
+
+            try {
+                const res = await fetch(`/timesheet/api/non-vat-pending-diff/data?year=${currentYear}`, {
+                    headers: { "x-vat-code": vatCode }
+                });
+                if (res.status === 401) return triggerLoginError();
+                const json = await res.json();
+                if (json.success) {
+                    rawData = json.data;
+                    renderDashboard();
+                    showStatus("Ready", "saved");
+                } else {
+                    alert("Error: " + json.message);
+                }
+            } catch (err) {
+                showStatus("Network Error", "error");
+            }
+        }
+
+        // ഡിഫറൻസ് കണക്കാക്കുന്ന ഫംഗ്ഷൻ (Quick Dice - Vendor TS)
+        function calculateDiff(vendorTs, quickDiceStr) {
+            const vTs = parseFloat(vendorTs || 0);
+            const qStr = String(quickDiceStr || "").trim();
+            if (qStr === "") return null; // ഡൈസ് എൻട്രി ചെയ്തിട്ടില്ല
+            const qVal = parseFloat(qStr.replace(/,/g, ""));
+            if (isNaN(qVal)) return null;
+
+            return Number((qVal - vTs).toFixed(2));
+        }
+
+        function renderDashboard() {
+            const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+            const thead = document.getElementById("diffTableHead");
+            const tbody = document.getElementById("diffTableBody");
+            const shortYear = currentYear.toString().slice(-2);
+
+            // 1. ആർക്കെങ്കിലും ഡിഫറൻസ് ഉള്ള മാസങ്ങൾ മാത്രം കണ്ടെത്തുന്നു
+            const visibleMonths = [];
+            for (let m = 0; m < 12; m++) {
+                let monthHasDiff = false;
+                for (let sup of rawData) {
+                    for (let st of sup.sites) {
+                        const b = st.billing[m] || {};
+                        const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+                        if (diff !== null && diff !== 0) {
+                            monthHasDiff = true;
+                            break;
+                        }
+                    }
+                    if (monthHasDiff) break;
+                }
+                if (monthHasDiff) visibleMonths.push(m);
+            }
+
+            // 2. ഹെഡർ നിർമ്മാണം (With Filter Icons - Exact Width Preserved)
+            const supFilterActive = activeFilters.supplier.length > 0 ? "filtered" : "";
+            const siteFilterActive = activeFilters.site.length > 0 ? "filtered" : "";
+
+            let headHtml = "";
+
+            if (currentViewMode === "individual") {
+                headHtml = `
+                    <tr>
+                        <th rowspan="2" class="head-sticky-supplier">
+                            Supplier / Owner
+                            <span class="filter-icon ${supFilterActive}" onclick="openFilterDropdown(event, 'supplier')">▼</span>
+                        </th>
+                        <th rowspan="2" class="head-sticky-site">
+                            Site
+                            <span class="filter-icon ${siteFilterActive}" onclick="openFilterDropdown(event, 'site')">▼</span>
+                        </th>
+                `;
+                visibleMonths.forEach(m => {
+                    const mLabel = `${monthsFull[m].substring(0, 3)} - ${shortYear}`;
+                    headHtml += `<th colspan="3" style="text-align: center; min-width: 270px;">${mLabel}</th>`;
+                });
+                headHtml += `</tr><tr>`;
+                visibleMonths.forEach(() => {
+                    headHtml += `
+                        <th style="min-width: 90px; background: #0f766e;">Vendor TS</th>
+                        <th style="min-width: 90px; background: #4338ca;">Quick Dice</th>
+                        <th style="min-width: 90px; background: #b91c1c;">Diff</th>
+                    `;
+                });
+                headHtml += `</tr>`;
+            } else {
+                headHtml = `
+                    <tr>
+                        <th class="head-sticky-supplier">
+                            Supplier / Owner
+                            <span class="filter-icon ${supFilterActive}" onclick="openFilterDropdown(event, 'supplier')">▼</span>
+                        </th>
+                        <th class="head-sticky-site">
+                            Site
+                            <span class="filter-icon ${siteFilterActive}" onclick="openFilterDropdown(event, 'site')">▼</span>
+                        </th>
+                        <th style="min-width: 130px; background: #0f766e;">Total Vendor TS</th>
+                        <th style="min-width: 130px; background: #4338ca;">Total Quick Dice</th>
+                        <th style="min-width: 140px; background: #b91c1c;">Total Difference</th>
+                    </tr>
+                `;
+            }
+            thead.innerHTML = headHtml;
+
+            // 3. ബോഡി ഡാറ്റ റെൻഡർ ചെയ്യൽ
+            tbody.innerHTML = "";
+            let renderedSupplierCount = 0;
+            let renderedSiteCount = 0;
+
+            rawData.forEach(supObj => {
+                if (activeFilters.supplier.length > 0 && !activeFilters.supplier.includes(supObj.supplier)) return;
+
+                let sitesToDisplay = supObj.sites.filter(st => {
+                    if (activeFilters.site.length > 0 && !activeFilters.site.includes(st.site_first_name.toUpperCase())) return false;
+
+                    if (searchTerm) {
+                        const matchText = `${supObj.supplier} ${st.site_first_name}`.toLowerCase();
+                        if (!matchText.includes(searchTerm)) return false;
+                    }
+
+                    if (currentViewMode === "individual") {
+                        return visibleMonths.some(m => {
+                            const b = st.billing[m] || {};
+                            const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+                            return diff !== null && diff !== 0;
+                        });
+                    } else {
+                        let sumVts = 0;
+                        let sumQd = 0;
+                        let hasAnyQd = false;
+
+                        for (let m = 0; m < 12; m++) {
+                            const b = st.billing[m] || {};
+                            sumVts += parseFloat(b.vendor_ts || 0);
+                            const qStr = String(b.quick_dice || "").trim();
+                            if (qStr !== "") {
+                                const qVal = parseFloat(qStr.replace(/,/g, ""));
+                                if (!isNaN(qVal)) {
+                                    sumQd += qVal;
+                                    hasAnyQd = true;
+                                }
+                            }
+                        }
+                        const totalDiff = Number((sumQd - sumVts).toFixed(2));
+                        return hasAnyQd && totalDiff !== 0;
+                    }
+                });
+
+                if (sitesToDisplay.length === 0) return;
+
+                renderedSupplierCount++;
+                renderedSiteCount += sitesToDisplay.length;
+
+                sitesToDisplay.forEach((st, sIdx) => {
+                    let tr = document.createElement("tr");
+                    let rowHtml = "";
+
+                    // Supplier Merge
+                    if (sIdx === 0) {
+                        rowHtml += `
+                            <td rowspan="${sitesToDisplay.length}" class="cell-sticky-supplier">
+                                <span class="sup-sn-badge">${renderedSupplierCount}</span>
+                                <span>${escapeHTML(supObj.supplier)}</span>
+                            </td>
+                        `;
+                    }
+
+                    rowHtml += `<td class="cell-sticky-site">${escapeHTML(st.site_first_name.toUpperCase())}</td>`;
+
+                    if (currentViewMode === "individual") {
+                        visibleMonths.forEach(m => {
+                            const b = st.billing[m] || {};
+                            const vTs = parseFloat(b.vendor_ts || 0);
+                            const qStr = String(b.quick_dice || "").trim();
+                            const qVal = parseFloat(qStr.replace(/,/g, ""));
+                            const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+
+                            if (diff !== null && diff !== 0) {
+                                const diffClass = diff > 0 ? "diff-pos" : "diff-neg";
+                                const prefix = diff > 0 ? "+" : "";
+
+                                rowHtml += `
+                                    <td style="font-weight: 600; color: #0f766e;">${vTs > 0 ? vTs.toFixed(2) : "-"}</td>
+                                    <td style="font-weight: 600; color: #4338ca;">${!isNaN(qVal) && qVal > 0 ? qVal.toFixed(2) : (qStr !== "" ? escapeHTML(qStr) : "-")}</td>
+                                    <td class="${diffClass}">${prefix}${diff.toFixed(2)}</td>
+                                `;
+                            } else {
+                                rowHtml += `<td colspan="3" class="inactive-cell"></td>`;
+                            }
+                        });
+                    } else {
+                        let sumVts = 0;
+                        let sumQd = 0;
+                        for (let m = 0; m < 12; m++) {
+                            const b = st.billing[m] || {};
+                            sumVts += parseFloat(b.vendor_ts || 0);
+                            const qStr = String(b.quick_dice || "").trim();
+                            if (qStr !== "") {
+                                const qVal = parseFloat(qStr.replace(/,/g, ""));
+                                if (!isNaN(qVal)) sumQd += qVal;
+                            }
+                        }
+
+                        const totalDiff = Number((sumQd - sumVts).toFixed(2));
+                        const diffClass = totalDiff > 0 ? "diff-pos" : (totalDiff < 0 ? "diff-neg" : "");
+                        const prefix = totalDiff > 0 ? "+" : "";
+
+                        rowHtml += `
+                            <td style="font-weight: 700; color: #0f766e;">${sumVts > 0 ? sumVts.toFixed(2) : "-"}</td>
+                            <td style="font-weight: 700; color: #4338ca;">${sumQd > 0 ? sumQd.toFixed(2) : "-"}</td>
+                            <td class="${diffClass}">${prefix}${totalDiff.toFixed(2)}</td>
+                        `;
+                    }
+
+                    tr.innerHTML = rowHtml;
+                    tbody.appendChild(tr);
+                });
+            });
+
+            if (renderedSiteCount === 0) {
+                const totalCols = currentViewMode === "individual" ? (2 + visibleMonths.length * 3) : 5;
+                tbody.innerHTML = `<tr><td colspan="${totalCols}" style="padding: 40px; text-align: center; color: #10b981; font-weight: 700; font-size: 13px;">✓ All records are balanced! No pending differences found.</td></tr>`;
+            }
+        }
+
+        function showStatus(msg, type) {
+            const s = document.getElementById("saveStatus");
+            s.innerText = msg;
+            s.className = `status-${type}`;
+            if (type === "saved" || type === "error") setTimeout(() => s.innerText = "", 3000);
+        }
+
+        function escapeHTML(str) { return str ? String(str).replace(/[&<>'"]/g, t => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" })[t] || t) : ""; }
+
+        // 🟢 Export Difference Data to Excel with 2 Tabs and Percentage Progress
+        async function exportToExcelDiff() {
+            if (!rawData || rawData.length === 0) {
+                alert("എക്സ്പോർട്ട് ചെയ്യാൻ ഡാറ്റ ലഭ്യമല്ല!");
+                return;
+            }
+
+            if (typeof ExcelJS === "undefined" || typeof saveAs === "undefined") {
+                alert("ExcelJS അല്ലെങ്കിൽ FileSaver ലൈബ്രറി ലോഡ് ആയിട്ടില്ല!");
+                return;
+            }
+
+            const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+            const updateProgress = async (pct, text) => {
+                showStatus(`⏳ Exporting: ${pct}% - ${text}`, "saving");
+                await sleep(15);
+            };
+
+            try {
+                await updateProgress(5, "Initializing Workbook...");
+                const workbook = new ExcelJS.Workbook();
+                const shortYear = currentYear.toString().slice(-2);
+                const searchTerm = document.getElementById("searchInput").value.toLowerCase();
+
+                // 1. ആക്ടീവ് ഡിഫറൻസ് മാസങ്ങൾ കണ്ടെത്തുന്നു
+                await updateProgress(12, "Scanning Difference Months...");
+                const visibleMonths = [];
+                for (let m = 0; m < 12; m++) {
+                    let monthHasDiff = false;
+                    for (let sup of rawData) {
+                        for (let st of sup.sites) {
+                            const b = st.billing[m] || {};
+                            const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+                            if (diff !== null && diff !== 0) {
+                                monthHasDiff = true;
+                                break;
+                            }
+                        }
+                        if (monthHasDiff) break;
+                    }
+                    if (monthHasDiff) visibleMonths.push(m);
+                }
+
+                // =========================================================
+                // 📑 TAB 1: Month-wise Diff (Individual View - 3 Columns per Month)
+                // =========================================================
+                await updateProgress(20, "Building Tab 1 (Month-wise Diff)...");
+                const wsMonth = workbook.addWorksheet("Month-wise Diff", {
+                    views: [{ showGridLines: true, state: 'frozen', ySplit: 3, xSplit: 2 }] // 🟢 Header & First 2 Columns Frozen
+                });
+
+                const totalColsTab1 = 2 + visibleMonths.length * 3;
+                wsMonth.mergeCells(1, 1, 1, totalColsTab1);
+                const bannerMonth = wsMonth.getCell('A1');
+                bannerMonth.value = `NON-VAT Diffrence - Month Wise Analysis Report (${currentYear})`;
+                bannerMonth.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+                bannerMonth.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2027' } };
+                bannerMonth.alignment = { horizontal: 'center', vertical: 'middle' };
+                wsMonth.getRow(1).height = 26;
+
+                // Headers Row 2 & Row 3
+                wsMonth.mergeCells(2, 1, 3, 1);
+                const hSup = wsMonth.getCell(2, 1);
+                hSup.value = "Supplier / Owner";
+                hSup.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+                hSup.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+                hSup.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                wsMonth.mergeCells(2, 2, 3, 2);
+                const hSite = wsMonth.getCell(2, 2);
+                hSite.value = "Site";
+                hSite.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+                hSite.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+                hSite.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                visibleMonths.forEach((m, idx) => {
+                    const startCol = 3 + idx * 3;
+                    const mLabel = `${monthsFull[m].substring(0, 3)} - ${shortYear}`;
+
+                    wsMonth.mergeCells(2, startCol, 2, startCol + 2);
+                    const mTitleCell = wsMonth.getCell(2, startCol);
+                    mTitleCell.value = mLabel;
+                    mTitleCell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+                    mTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2027' } };
+                    mTitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                    const subHeaders = [
+                        { text: "Vendor TS", color: 'FF0F766E' },
+                        { text: "Quick Dice", color: 'FF4338CA' },
+                        { text: "Diff", color: 'FFB91C1C' }
+                    ];
+
+                    subHeaders.forEach((sub, sIdx) => {
+                        const cell = wsMonth.getCell(3, startCol + sIdx);
+                        cell.value = sub.text;
+                        cell.font = { name: 'Arial', size: 8, bold: true, color: { argb: 'FFFFFFFF' } };
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: sub.color } };
+                        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    });
+                });
+
+                for (let r = 2; r <= 3; r++) {
+                    const row = wsMonth.getRow(r);
+                    for (let c = 1; c <= totalColsTab1; c++) {
+                        row.getCell(c).border = {
+                            top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                            left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                            bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                            right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+                        };
+                    }
+                }
+
+                let rowIdxMonth = 4;
+                const totalSuppliers = rawData.length;
+
+                for (let sIndex = 0; sIndex < totalSuppliers; sIndex++) {
+                    const supObj = rawData[sIndex];
+                    const currentPct = Math.round(20 + ((sIndex / totalSuppliers) * 30));
+                    if (sIndex % 3 === 0) {
+                        await updateProgress(currentPct, `Processing Tab 1: ${supObj.supplier.substring(0, 15)}...`);
+                    }
+
+                    const sitesToExport = supObj.sites.filter(st => {
+                        if (searchTerm) {
+                            const matchText = `${supObj.supplier} ${st.site_first_name}`.toLowerCase();
+                            if (!matchText.includes(searchTerm)) return false;
+                        }
+                        return visibleMonths.some(m => {
+                            const b = st.billing[m] || {};
+                            const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+                            return diff !== null && diff !== 0;
+                        });
+                    });
+
+                    if (sitesToExport.length > 0) {
+                        const supStartRow = rowIdxMonth;
+
+                        sitesToExport.forEach(st => {
+                            const row = wsMonth.getRow(rowIdxMonth);
+                            row.height = 20;
+
+                            const siteCell = row.getCell(2);
+                            siteCell.value = st.site_first_name.toUpperCase();
+                            siteCell.font = { name: 'Arial', size: 9, bold: true };
+                            siteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+                            siteCell.border = {
+                                top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                            };
+
+                            visibleMonths.forEach((m, mIdx) => {
+                                const startCol = 3 + mIdx * 3;
+                                const b = st.billing[m] || {};
+                                const vTs = parseFloat(b.vendor_ts || 0);
+                                const qStr = String(b.quick_dice || "").trim();
+                                const qVal = parseFloat(qStr.replace(/,/g, ""));
+                                const diff = calculateDiff(b.vendor_ts, b.quick_dice);
+
+                                const cVts = row.getCell(startCol);
+                                const cQd = row.getCell(startCol + 1);
+                                const cDiff = row.getCell(startCol + 2);
+
+                                if (diff !== null && diff !== 0) {
+                                    cVts.value = vTs > 0 ? vTs : "";
+                                    cVts.numFmt = '#,##0.00';
+                                    cVts.font = { name: 'Arial', size: 9, color: { argb: 'FF0F766E' } };
+                                    cVts.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                                    cQd.value = (!isNaN(qVal) && qVal > 0) ? qVal : (qStr !== "" ? qStr : "");
+                                    if (!isNaN(qVal) && qVal > 0) cQd.numFmt = '#,##0.00';
+                                    cQd.font = { name: 'Arial', size: 9, color: { argb: 'FF4338CA' } };
+                                    cQd.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                                    cDiff.value = diff;
+                                    cDiff.numFmt = '+#,##0.00;-#,##0.00;0.00';
+                                    cDiff.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                                    if (diff > 0) {
+                                        cDiff.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                                        cDiff.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFB91C1C' } };
+                                    } else {
+                                        cDiff.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+                                        cDiff.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF15803D' } };
+                                    }
+                                } else {
+                                    wsMonth.mergeCells(rowIdxMonth, startCol, rowIdxMonth, startCol + 2);
+                                    cVts.value = "-";
+                                    cVts.font = { color: { argb: 'FF94A3B8' } };
+                                    cVts.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+                                    cVts.alignment = { horizontal: 'center', vertical: 'middle' };
+                                }
+
+                                [cVts, cQd, cDiff].forEach(c => {
+                                    c.border = {
+                                        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                                    };
+                                });
+                            });
+
+                            rowIdxMonth++;
+                        });
+
+                        if (sitesToExport.length > 1) {
+                            wsMonth.mergeCells(supStartRow, 1, rowIdxMonth - 1, 1);
+                        }
+                        const supCell = wsMonth.getCell(supStartRow, 1);
+                        supCell.value = supObj.supplier;
+                        supCell.font = { name: 'Arial', size: 9, bold: true };
+                        supCell.alignment = { vertical: 'middle', horizontal: 'left' };
+                        supCell.border = {
+                            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                        };
+                    }
+                }
+
+                wsMonth.getColumn(1).width = 28;
+                wsMonth.getColumn(2).width = 16;
+                for (let c = 3; c <= totalColsTab1; c++) {
+                    wsMonth.getColumn(c).width = 14;
+                }
+
+                // 🟢 Enable AutoFilter on Tab 1 headers (Row 3)
+                wsMonth.autoFilter = {
+                    from: { row: 3, column: 1 },
+                    to: { row: Math.max(rowIdxMonth - 1, 3), column: totalColsTab1 }
+                };
+
+                // =========================================================
+                // 📑 TAB 2: Total Diff (Yearly Summary)
+                // =========================================================
+                await updateProgress(55, "Building Tab 2 (Total Diff)...");
+                const wsTotal = workbook.addWorksheet("Total Diff", {
+                    views: [{ showGridLines: true, state: 'frozen', ySplit: 2, xSplit: 2 }] // 🟢 Header Frozen on Row 2
+                });
+
+                wsTotal.mergeCells('A1:E1');
+                const bannerTotal = wsTotal.getCell('A1');
+                bannerTotal.value = `NON-VAT DIFFERENCE - ${currentYear} - TOTAL ANALYSIS REPORT `;
+                bannerTotal.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
+                bannerTotal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F2027' } };
+                bannerTotal.alignment = { horizontal: 'center', vertical: 'middle' };
+                wsTotal.getRow(1).height = 26;
+
+                const headerRowTotal = wsTotal.getRow(2);
+                headerRowTotal.height = 22;
+                const headersTotal = [
+                    { text: "Supplier / Owner", bg: 'FF1E293B' },
+                    { text: "Site", bg: 'FF1E293B' },
+                    { text: "Total Vendor TS", bg: 'FF0F766E' },
+                    { text: "Total Quick Dice", bg: 'FF4338CA' },
+                    { text: "Total Difference", bg: 'FFB91C1C' }
+                ];
+
+                headersTotal.forEach((h, idx) => {
+                    const cell = headerRowTotal.getCell(idx + 1);
+                    cell.value = h.text;
+                    cell.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFFFFFFF' } };
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: h.bg } };
+                    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                    cell.border = {
+                        top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                        left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                        bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+                        right: { style: 'thin', color: { argb: 'FFCBD5E1' } }
+                    };
+                });
+
+                let rowIdxTotal = 3;
+
+                for (let sIndex = 0; sIndex < totalSuppliers; sIndex++) {
+                    const supObj = rawData[sIndex];
+                    const currentPct = Math.round(55 + ((sIndex / totalSuppliers) * 25));
+                    if (sIndex % 3 === 0) {
+                        await updateProgress(currentPct, `Processing Tab 2: ${supObj.supplier.substring(0, 15)}...`);
+                    }
+
+                    const sitesToExportTotal = supObj.sites.filter(st => {
+                        if (searchTerm) {
+                            const matchText = `${supObj.supplier} ${st.site_first_name}`.toLowerCase();
+                            if (!matchText.includes(searchTerm)) return false;
+                        }
+
+                        let sumVts = 0, sumQd = 0, hasAnyQd = false;
+                        for (let m = 0; m < 12; m++) {
+                            const b = st.billing[m] || {};
+                            sumVts += parseFloat(b.vendor_ts || 0);
+                            const qStr = String(b.quick_dice || "").trim();
+                            if (qStr !== "") {
+                                const qVal = parseFloat(qStr.replace(/,/g, ""));
+                                if (!isNaN(qVal)) {
+                                    sumQd += qVal;
+                                    hasAnyQd = true;
+                                }
+                            }
+                        }
+                        const totalDiff = Number((sumQd - sumVts).toFixed(2));
+                        return hasAnyQd && totalDiff !== 0;
+                    });
+
+                    if (sitesToExportTotal.length > 0) {
+                        const supStartRow = rowIdxTotal;
+
+                        sitesToExportTotal.forEach(st => {
+                            const row = wsTotal.getRow(rowIdxTotal);
+                            row.height = 20;
+
+                            let sumVts = 0, sumQd = 0;
+                            for (let m = 0; m < 12; m++) {
+                                const b = st.billing[m] || {};
+                                sumVts += parseFloat(b.vendor_ts || 0);
+                                const qStr = String(b.quick_dice || "").trim();
+                                if (qStr !== "") {
+                                    const qVal = parseFloat(qStr.replace(/,/g, ""));
+                                    if (!isNaN(qVal)) sumQd += qVal;
+                                }
+                            }
+                            const totalDiff = Number((sumQd - sumVts).toFixed(2));
+
+                            const siteCell = row.getCell(2);
+                            siteCell.value = st.site_first_name.toUpperCase();
+                            siteCell.font = { name: 'Arial', size: 9, bold: true };
+                            siteCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                            const cVts = row.getCell(3);
+                            cVts.value = sumVts > 0 ? sumVts : "";
+                            cVts.numFmt = '#,##0.00';
+                            cVts.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F766E' } };
+                            cVts.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                            const cQd = row.getCell(4);
+                            cQd.value = sumQd > 0 ? sumQd : "";
+                            cQd.numFmt = '#,##0.00';
+                            cQd.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF4338CA' } };
+                            cQd.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                            const cDiff = row.getCell(5);
+                            cDiff.value = totalDiff;
+                            cDiff.numFmt = '+#,##0.00;-#,##0.00;0.00';
+                            cDiff.alignment = { horizontal: 'center', vertical: 'middle' };
+
+                            if (totalDiff > 0) {
+                                cDiff.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEE2E2' } };
+                                cDiff.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FFB91C1C' } };
+                            } else if (totalDiff < 0) {
+                                cDiff.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCFCE7' } };
+                                cDiff.font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF15803D' } };
+                            }
+
+                            [siteCell, cVts, cQd, cDiff].forEach(c => {
+                                c.border = {
+                                    top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                    left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                    bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                                    right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                                };
+                            });
+
+                            rowIdxTotal++;
+                        });
+
+                        if (sitesToExportTotal.length > 1) {
+                            wsTotal.mergeCells(supStartRow, 1, rowIdxTotal - 1, 1);
+                        }
+                        const supCell = wsTotal.getCell(supStartRow, 1);
+                        supCell.value = supObj.supplier;
+                        supCell.font = { name: 'Arial', size: 9, bold: true };
+                        supCell.alignment = { vertical: 'middle', horizontal: 'left' };
+                        supCell.border = {
+                            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+                            right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+                        };
+                    }
+                }
+
+                wsTotal.getColumn(1).width = 28;
+                wsTotal.getColumn(2).width = 16;
+                wsTotal.getColumn(3).width = 16;
+                wsTotal.getColumn(4).width = 16;
+                wsTotal.getColumn(5).width = 18;
+
+                // 🟢 Enable AutoFilter on Tab 2 headers (Row 2)
+                wsTotal.autoFilter = {
+                    from: { row: 2, column: 1 },
+                    to: { row: Math.max(rowIdxTotal - 1, 2), column: 5 }
+                };
+
+                // =========================================================
+                // 💾 Generating and Downloading Excel File
+                // =========================================================
+                await updateProgress(88, "Writing Excel Buffer...");
+                const buffer = await workbook.xlsx.writeBuffer();
+
+                await updateProgress(96, "Preparing Download...");
+                const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+                saveAs(blob, `Non_VAT_Pending_Difference_Report_${currentYear}.xlsx`);
+
+                await updateProgress(100, "Done!");
+                showStatus("✓ Exported Successfully (2 Tabs Included)", "saved");
+            } catch (err) {
+                console.error("Excel Export Error:", err);
+                showStatus("Export Error", "error");
+                alert("എക്സ്പോർട്ട് ചെയ്യുന്നതിൽ തകരാർ സംഭവിച്ചു: " + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
