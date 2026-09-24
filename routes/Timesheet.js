@@ -967,184 +967,202 @@ router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
 // ==========================================
 // RECORD LOCKING (CONCURRENCY CONTROL & LIVE TRANSFER)
 // ==========================================
-const activeRecordLocks = new Map();
 const recordLockTimeout = 10 * 60 * 1000;
 const transferRequestTimeout = 15 * 1000;
+let recordLockTableReady;
  
 function recordLockKey({ plate, month, year }) {
   if (!plate || !month || !year) return null;
-  return `${String(plate).replace(/\s+/g, "").toUpperCase()}_${month}_${year}`;
+  return `${String(plate).replace(/\s+/g, "").toUpperCase()}_${String(month).trim().toLowerCase()}_${String(year).trim()}`;
 }
  
 function sameLockUser(first, second) {
   return String(first).trim().toLowerCase() === String(second).trim().toLowerCase();
 }
  
-function getActiveRecordLock(key) {
-  const lock = activeRecordLocks.get(key);
-  if (lock && Date.now() - lock.timestamp >= recordLockTimeout) {
-    activeRecordLocks.delete(key);
-    return null;
+function ensureRecordLockTable() {
+  if (!recordLockTableReady) {
+    recordLockTableReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS timesheet_record_locks (
+        lock_key TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        lease_id TEXT,
+        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        requested_by TEXT,
+        request_time TIMESTAMPTZ,
+        requester_seen_at TIMESTAMPTZ
+      )
+    `).catch(error => {
+      recordLockTableReady = null;
+      throw error;
+    });
   }
-  if (lock && lock.requestedBy && lock.requestedBy !== "REJECTED" &&
-      Date.now() - lock.requesterSeenAt >= transferRequestTimeout) {
-    lock.requestedBy = null;
-    lock.requestTime = null;
-    lock.requesterSeenAt = null;
+  return recordLockTableReady;
+}
+
+function activeRecordLock(lock) {
+  return lock && Date.now() - new Date(lock.last_seen_at).getTime() < recordLockTimeout ? lock : null;
+}
+
+function pendingRequester(lock) {
+  return lock.requested_by && lock.requested_by !== "REJECTED" &&
+    Date.now() - new Date(lock.requester_seen_at).getTime() < transferRequestTimeout;
+}
+
+async function withRecordLock(lockKey, callback) {
+  await ensureRecordLockTable();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await client.query("SELECT * FROM timesheet_record_locks WHERE lock_key = $1 FOR UPDATE", [lockKey]);
+    const value = await callback(client, activeRecordLock(result.rows[0]));
+    await client.query("COMMIT");
+    return value;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-  return lock;
+ }
+
+function recordLockError(res, error) {
+  console.error("Timesheet record lock error:", error);
+  res.status(503).json({ success: false, message: "Record lock unavailable. Please try again." });
 }
  
-// 🟢 ROBUST MULTI-USER CONCURRENCY CONTROL
-router.post("/api/record-lock/request", verifyToken, (req, res) => {
+router.post("/api/record-lock/request", verifyToken, async (req, res) => {
   const lockKey = recordLockKey(req.body);
   if (!lockKey) {
     return res.json({ success: false, message: "Missing lock parameters" });
   }
- 
-  const currentUsername = String(req.user.username).trim();
-  const now = Date.now();
- 
-  const existingLock = getActiveRecordLock(lockKey);
- 
-  if (existingLock) {
-    const lockOwner = String(existingLock.username).trim();
- 
-    // 🟢 1. സ്വന്തം ലോക്ക് ആണെങ്കിൽ എപ്പോഴും ആക്സസ് നൽകുക (Never block the owner)
-    if (sameLockUser(lockOwner, currentUsername)) {
-      existingLock.timestamp = now; // Refresh activity timestamp
-      existingLock.leaseId = randomUUID();
-      return res.json({ success: true, owner: lockOwner, leaseId: existingLock.leaseId });
-    }
- 
-    return res.json({ success: false, lockedBy: existingLock.username });
+ try {
+    await ensureRecordLockTable();
+    const username = String(req.user.username).trim();
+    const leaseId = randomUUID();
+    const claim = await pool.query(`
+      INSERT INTO timesheet_record_locks (lock_key, username, lease_id)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (lock_key) DO UPDATE SET
+        username = EXCLUDED.username, lease_id = EXCLUDED.lease_id,
+        last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL
+      WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
+         OR LOWER(TRIM(timesheet_record_locks.username)) = LOWER(TRIM(EXCLUDED.username))
+      RETURNING username
+    `, [lockKey, username, leaseId]);
+    if (claim.rows.length) return res.json({ success: true, owner: username, leaseId });
+    const holder = await pool.query("SELECT username FROM timesheet_record_locks WHERE lock_key = $1", [lockKey]);
+    res.json({ success: false, lockedBy: holder.rows[0]?.username, message: "Record is locked. Please retry." });
+  } catch (error) {
+    recordLockError(res, error);
   }
- 
-  // പുതിയ ലോക്ക് ഓണർഷിപ്പ് നൽകുന്നു
-  const leaseId = randomUUID();
-  activeRecordLocks.set(lockKey, {
-    username: currentUsername,
-    timestamp: now,
-     leaseId,
-    requestedBy: null,
-    requestTime: null,
-    requesterSeenAt: null,
-  });
-  res.json({ success: true, owner: currentUsername, leaseId });
 });
  
-// 🟢 INSTANT RELEASE: ടാബ് മാറുമ്പോഴോ ക്ലോസ് ചെയ്യുമ്പോഴോ ഉടനടി റിലീസ് ചെയ്യുന്നു
-router.post("/api/record-lock/release", verifyToken, (req, res) => {
+router.post("/api/record-lock/release", verifyToken, async (req, res) => {
   const lockKey = recordLockKey(req.body);
   if (!lockKey) return res.json({ success: true });
- 
-  const existingLock = getActiveRecordLock(lockKey);
-  if (existingLock) {
-    // ആ വ്യക്തി തന്നെയാണ് റിലീസ് ചെയ്യുന്നതെങ്കിൽ ഉടൻ മായ്ക്കുന്നു
-     if (req.body.leaseId && sameLockUser(existingLock.username, req.user.username) &&
-        existingLock.leaseId === req.body.leaseId) {
-      activeRecordLocks.delete(lockKey);
-    }
+  try {
+    await ensureRecordLockTable();
+    await pool.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1 AND LOWER(TRIM(username)) = LOWER(TRIM($2)) AND lease_id = $3", [lockKey, req.user.username, req.body.leaseId || null]);
+    res.json({ success: true });
+  } catch (error) {
+    recordLockError(res, error);
   }
-  res.json({ success: true });
 });
  
-// 🟢 RESOLVE TRANSFER: യൂസർ 2-ന് ഓണർഷിപ്പ് പെർമനന്റായി കൈമാറുന്നു
-router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
+router.post("/api/record-lock/resolve-transfer", verifyToken, async (req, res) => {
   const { action } = req.body;
   const lockKey = recordLockKey(req.body);
   if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  const lock = getActiveRecordLock(lockKey);
- 
-  if (!lock) return res.json({ success: false, message: "No active lock" });
- 
-  const requester = lock.requestedBy;
- 
-  if (action === "force" && requester && requester !== "REJECTED" &&
-      !sameLockUser(lock.username, requester) && sameLockUser(requester, req.user.username) &&
-      lock.requestTime && Date.now() - lock.requestTime >= 30000) {
-    lock.username = req.user.username; // User 2 becomes owner
-    lock.timestamp = Date.now();
-    lock.leaseId = null;
-    lock.requestedBy = null;
-    lock.requestTime = null;
-    lock.requesterSeenAt = null;
-    return res.json({ success: true, newOwner: lock.username });
-  } else if (sameLockUser(lock.username, req.user.username)) {
-    if (action === "approve" && requester && requester !== "REJECTED" && !sameLockUser(lock.username, requester)) {
-      lock.username = requester; // Hand over to User 2
-      lock.timestamp = Date.now();
-      lock.leaseId = null;
-      lock.requestedBy = null;
-      lock.requestTime = null;
-      lock.requesterSeenAt = null;
-      return res.json({ success: true, newOwner: lock.username });
-    } else if (action === "reject" && requester && requester !== "REJECTED") {
-      lock.requestedBy = "REJECTED";
-      lock.requestTime = null;
-      lock.requesterSeenAt = null;
-      return res.json({ success: true });
-    }
+ try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (!lock) return { success: false, message: "No active lock" };
+      const requester = lock.requested_by;
+      if (action === "force" && requester && requester !== "REJECTED" &&
+          sameLockUser(requester, req.user.username) &&
+          lock.request_time && Date.now() - new Date(lock.request_time).getTime() >= 30000) {
+        await client.query("UPDATE timesheet_record_locks SET username = $2, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester]);
+        return { success: true, newOwner: requester };
+      }
+      if (sameLockUser(lock.username, req.user.username) && req.body.leaseId === lock.lease_id) {
+        if (action === "approve" && pendingRequester(lock) && !sameLockUser(lock.username, requester)) {
+          await client.query("UPDATE timesheet_record_locks SET username = $2, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester]);
+          return { success: true, newOwner: requester };
+        }
+        if (action === "reject" && pendingRequester(lock)) {
+          await client.query("UPDATE timesheet_record_locks SET requested_by = 'REJECTED', request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+          return { success: true };
+        }
+      }
+      return { success: false };
+    });
+    res.json(result);
+  } catch (error) {
+    recordLockError(res, error);
   }
- 
-  res.json({ success: false });
 });
  
-// 🟢 POLL CHECK: തത്സമയം നിലവിലെ സ്റ്റാറ്റസ് ഉറപ്പുവരുത്തുന്നു
-router.get("/api/record-lock/poll", verifyToken, (req, res) => {
+router.get("/api/record-lock/poll", verifyToken, async (req, res) => {
   const { plate, month, year } = req.query;
   const lockKey = recordLockKey({ plate, month, year });
   if (!lockKey) return res.json({ locked: false });
-  const lock = getActiveRecordLock(lockKey);
- 
-  if (!lock) {
-    return res.json({ locked: false });
+  try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (!lock) return { locked: false };
+      const isOwner = sameLockUser(lock.username, req.user.username) &&
+        (!lock.lease_id || lock.lease_id === req.query.leaseId);
+      if (isOwner && lock.lease_id) {
+        await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
+      }
+      const requestedBy = pendingRequester(lock) ? lock.requested_by : lock.requested_by === "REJECTED" ? "REJECTED" : null;
+      if (requestedBy && requestedBy !== "REJECTED" && sameLockUser(requestedBy, req.user.username)) {
+        await client.query("UPDATE timesheet_record_locks SET requester_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
+      }
+      return {
+        locked: true, owner: lock.username, isOwner, requestedBy,
+        requestedByMe: !!requestedBy && requestedBy !== "REJECTED" && sameLockUser(requestedBy, req.user.username),
+        requestTime: lock.request_time ? new Date(lock.request_time).getTime() : null,
+      };
+    });
+    res.json(result);
+  } catch (error) {
+    recordLockError(res, error);
   }
- 
-  const isOwner = sameLockUser(lock.username, req.user.username);
-  if (isOwner) lock.timestamp = Date.now();
-  if (lock.requestedBy && lock.requestedBy !== "REJECTED" && sameLockUser(lock.requestedBy, req.user.username)) {
-    lock.requesterSeenAt = Date.now();
-  }
-  res.json({
-    locked: true,
-    owner: lock.username,
-    isOwner,
-    requestedBy: lock.requestedBy,
-    requestedByMe: lock.requestedBy !== "REJECTED" && !!lock.requestedBy && sameLockUser(lock.requestedBy, req.user.username),
-    requestTime: lock.requestTime,
-  });
 });
  
-// 🟢 NEW: API for User B to request edit access
-router.post("/api/record-lock/request-transfer", verifyToken, (req, res) => {
+router.post("/api/record-lock/request-transfer", verifyToken, async (req, res) => {
   const lockKey = recordLockKey(req.body);
   if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  const lock = getActiveRecordLock(lockKey);
-  if (!lock) return res.json({ success: false, message: "Record is not currently locked." });
-  if (sameLockUser(lock.username, req.user.username)) {
-    return res.json({ success: false, message: "You already have edit access." });
+  try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (!lock) return { success: false, message: "Record is not currently locked." };
+      if (sameLockUser(lock.username, req.user.username)) return { success: false, message: "You already have edit access." };
+      if (pendingRequester(lock) && !sameLockUser(lock.requested_by, req.user.username)) {
+        return { success: false, message: "Another request is pending." };
+      }
+      await client.query("UPDATE timesheet_record_locks SET requested_by = $2, request_time = NOW(), requester_seen_at = NOW() WHERE lock_key = $1", [lockKey, req.user.username]);
+      return { success: true };
+    });
+    res.json(result);
+  } catch (error) {
+    recordLockError(res, error);
   }
-  if (lock.requestedBy && lock.requestedBy !== "REJECTED" && !sameLockUser(lock.requestedBy, req.user.username)) {
-    return res.json({ success: false, message: "Another request is pending." });
-  }
-  lock.requestedBy = req.user.username;
-  lock.requestTime = Date.now();
-  lock.requesterSeenAt = lock.requestTime;
-  res.json({ success: true });
 });
  
-// 🟢 NEW: Clear Rejection Status
-router.post("/api/record-lock/clear-rejection", verifyToken, (req, res) => {
+router.post("/api/record-lock/clear-rejection", verifyToken, async (req, res) => {
   const lockKey = recordLockKey(req.body);
   if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  const lock = getActiveRecordLock(lockKey);
-  
-  if (lock && lock.requestedBy === "REJECTED" && !sameLockUser(lock.username, req.user.username)) {
-      lock.requestedBy = null;
-      lock.requesterSeenAt = null;
+  try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (lock && lock.requested_by === "REJECTED" && !sameLockUser(lock.username, req.user.username)) {
+        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+      }
+      return { success: true };
+    });
+    res.json(result);
+  } catch (error) {
+    recordLockError(res, error);
   }
-  res.json({ success: true });
 });
  
 // ==========================================
@@ -1209,6 +1227,7 @@ router.get("/api/grid-data", verifyToken, async (req, res) => {
 });
  
 router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
+  let client;
   try {
     const {
       month,
@@ -1233,12 +1252,20 @@ router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
     if (!allowedCols.includes(col_name))
       return res.json({ success: false, message: "Invalid column parameter" });
  
-    const username = req.user.username; // Extracting user from token via verifyEditor
-    const lock = getActiveRecordLock(recordLockKey({ plate: plate_no, month, year }));
-    if (lock && !sameLockUser(lock.username, username)) {
-      return res.json({ success: false, message: `Record is locked by ${lock.username}` });
+    const username = req.user.username;
+    const lockKey = recordLockKey({ plate: plate_no, month, year });
+    if (!lockKey || !req.body.leaseId) return res.json({ success: false, lockLost: true, message: "Edit access required. Fetch this record again." });
+    await ensureRecordLockTable();
+    client = await pool.connect();
+    await client.query("BEGIN");
+    const lockResult = await client.query("SELECT * FROM timesheet_record_locks WHERE lock_key = $1 FOR UPDATE", [lockKey]);
+    const lock = activeRecordLock(lockResult.rows[0]);
+    if (!lock || !sameLockUser(lock.username, username) || lock.lease_id !== req.body.leaseId) {
+      await client.query("ROLLBACK");
+      return res.json({ success: false, lockLost: true, lockedBy: lock?.username, message: lock ? `Record is locked by ${lock.username}` : "Edit access expired. Fetch this record again." });
     }
- 
+  await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
+
 const query = `
             INSERT INTO timesheet_daily_records (month, year, plate_no, record_date, "${col_name}", calc_distance, calc_time, modified_by) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
@@ -1250,7 +1277,7 @@ const query = `
                 modified_by = EXCLUDED.modified_by,
                 updated_at = CURRENT_TIMESTAMP
         `;
-    await pool.query(query, [
+     await client.query(query, [
       month,
       year,
       plate_no,
@@ -1260,15 +1287,19 @@ const query = `
       calc_time,
       username
     ]);
+    await client.query("COMMIT");
     res.json({ success: true });
   } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
     res.json({ success: false, message: error.message });
+  } finally {
+    if (client) client.release();
   }
 });
  
 // 🟢 Bulk Import Optimization (Batched Transactions for Performance)
 router.post("/api/bulk-import", verifyEditor, async (req, res) => {
-  const client = await pool.connect();
+  let client;
   try {
     const { records } = req.body;
     if (!records || !Array.isArray(records)) {
@@ -1278,10 +1309,28 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
       });
     }
  
+    await ensureRecordLockTable();
+    client = await pool.connect();
     await client.query("BEGIN");
     
     const username = req.user.username; // Extracting user from token via verifyEditor
- 
+ const importLeaseId = randomUUID();
+    const lockKeys = [...new Set(records.map(row => recordLockKey({ plate: row.plate_no, month: row.month, year: row.year })))].sort();
+    if (lockKeys.includes(null)) throw new Error("Missing record lock parameters");
+    for (const lockKey of lockKeys) {
+      const claim = await client.query(`
+        INSERT INTO timesheet_record_locks (lock_key, username, lease_id) VALUES ($1, $2, $3)
+        ON CONFLICT (lock_key) DO UPDATE SET
+          username = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' THEN EXCLUDED.username ELSE timesheet_record_locks.username END,
+          lease_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' THEN EXCLUDED.lease_id ELSE timesheet_record_locks.lease_id END,
+          last_seen_at = NOW()
+        WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
+           OR (LOWER(TRIM(timesheet_record_locks.username)) = LOWER(TRIM(EXCLUDED.username)) AND timesheet_record_locks.lease_id = $4)
+        RETURNING lease_id
+      `, [lockKey, username, importLeaseId, req.body.leaseId || null]);
+      if (!claim.rows.length) throw new Error("A record is locked by another editor. Try again after edit access is available.");
+    }
+
     // Batch Processing Logic to speed up large imports (reduces overhead)
     for (let i = 0; i < records.length; i += 1000) {
       const batch = records.slice(i, i + 1000);
@@ -1327,6 +1376,7 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
       }
     }
  
+    await client.query("DELETE FROM timesheet_record_locks WHERE lock_key = ANY($1::text[]) AND lease_id = $2", [lockKeys, importLeaseId]);
     await logAudit(
       req.user,
       "BULK_IMPORT_GRID",
@@ -1338,10 +1388,10 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
       message: `Successfully imported ${records.length} records.`,
     });
   } catch (error) {
-    await client.query("ROLLBACK");
+    if (client) await client.query("ROLLBACK").catch(() => {});
     res.json({ success: false, message: error.message });
   } finally {
-    client.release();
+    if (client) client.release();
   }
 });
  

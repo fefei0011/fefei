@@ -377,7 +377,8 @@ async function triggerFetch() {
   clearInterval(recordPollTimer);
   recordPollTimer = null;
   recordPollGeneration++;
-  isReadOnlyMode = false;
+  isReadOnlyMode = true;
+  makeGridReadOnlyLive();
   amIWaitingForApproval = false;
   incomingRequestActive = false;
   
@@ -635,7 +636,12 @@ async function triggerFetch() {
     
     try {
         renderGrid(m, y, p, existingData, sStartVal, sEndVal, logs, pLogsForGrid);
-        await applyLockStatus(m, y, false);
+         await applyLockStatus(m, y, false);
+        const saveLabel = document.getElementById("saveStatus");
+        if (saveLabel) {
+            saveLabel.innerText = !isReadOnlyMode && !document.querySelector(".grid-input")?.disabled ? "Editable" : "Read Only";
+            saveLabel.className = "save-indicator";
+        }
         
         if(typeof startRecordPoll === "function") {
             startRecordPoll(p, m, y);
@@ -1317,6 +1323,7 @@ window.addEventListener("pagehide", function () {
 });
 
 async function saveCellData(rowIdx, colName, colValue) {
+  if (isReadOnlyMode || !currentLockedRecord) return;
   const mainPlateInput = document.getElementById("selPlate");
   let p = mainPlateInput.dataset.actualPlate || mainPlateInput.value.trim().toUpperCase();
   if (p.includes("➔")) p = p.split("➔").pop().trim();
@@ -1342,6 +1349,7 @@ async function saveCellData(rowIdx, colName, colValue) {
     col_value: colValue,
     calc_distance: calc_distance,
     calc_time: calc_time,
+    leaseId: currentLockedRecord.leaseId,
   };
 
   try {
@@ -1361,6 +1369,15 @@ async function saveCellData(rowIdx, colName, colValue) {
     }
 
     const data = await response.json().catch(() => ({}));
+
+    if (data.lockLost) {
+      isReadOnlyMode = true;
+      currentLockedRecord = null;
+      makeGridReadOnlyLive();
+      document.getElementById("btnRequestEdit").style.display = "inline-block";
+      await customAlert(data.message, "Edit Access Lost");
+      return;
+    }
 
     if (!response.ok || data.success === false) {
       throw new Error(data.message || "Database rejected the save. Possible sync issue.");
@@ -2075,7 +2092,7 @@ async function importExcel() {
             "Content-Type": "application/json",
             Authorization: "Bearer " + token,
           },
-          body: JSON.stringify({ records: processedRecords }),
+          body: JSON.stringify({ records: processedRecords, leaseId: currentLockedRecord?.leaseId }),
         });
         const resData = await sendRes.json();
         if (sendRes.ok && resData.success) {
@@ -2204,6 +2221,7 @@ function startRecordPoll(p, m, y) {
       try {
           const ts = new Date().getTime(); 
           const params = new URLSearchParams({ plate: p, month: m, year: y, _t: ts });
+          if (currentLockedRecord?.leaseId) params.set("leaseId", currentLockedRecord.leaseId);
           const res = await fetch(`/timesheet/api/record-lock/poll?${params}`, {
               headers: { 
                   "Authorization": "Bearer " + token,
@@ -2213,14 +2231,21 @@ function startRecordPoll(p, m, y) {
               cache: "no-store"
           });
           const data = await res.json();
-           if (generation !== recordPollGeneration || !res.ok || data.success === false) return;
+          if (generation !== recordPollGeneration) return;
+           if (!res.ok || data.success === false) {
+               if (!isReadOnlyMode) {
+                   isReadOnlyMode = true;
+                   makeGridReadOnlyLive();
+               }
+               return;
+           }
 
           const isMe = data.isOwner;
           const isRequestedByMe = data.requestedByMe;
           const isRejected = data.requestedBy === "REJECTED";
 
           if (!data.locked) {
-               if (currentLockedRecord && !isReadOnlyMode) {
+              if (currentLockedRecord) {
                   const claimRes = await fetch('/timesheet/api/record-lock/request', {
                       method: 'POST',
                       headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -2230,6 +2255,7 @@ function startRecordPoll(p, m, y) {
                   if (generation !== recordPollGeneration) return;
                  if (claim.success) {
                       currentLockedRecord = { plate: p, month: m, year: y, leaseId: claim.leaseId };
+                      if (isReadOnlyMode) triggerFetch();
                       return;
                   }
                   if (claim.lockedBy) {
@@ -2319,6 +2345,10 @@ function startRecordPoll(p, m, y) {
           }
       } catch (e) {
           console.error("Record lock poll failed:", e);
+          if (generation === recordPollGeneration && !isReadOnlyMode) {
+              isReadOnlyMode = true;
+              makeGridReadOnlyLive();
+          }
       } finally {
           pollInFlight = false;
       }
@@ -2496,7 +2526,7 @@ async function resolveTransfer(p, m, y, action) {
   await fetch("/timesheet/api/record-lock/resolve-transfer", {
       method: 'POST',
       headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({ plate: p, month: m, year: y, action: action })
+       body: JSON.stringify({ plate: p, month: m, year: y, action: action, leaseId: currentLockedRecord?.leaseId })
   });
 }
 
