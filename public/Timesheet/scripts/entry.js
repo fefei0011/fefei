@@ -28,6 +28,7 @@ let isEditingInvoice = false;
 let currentInvoices = [];
 let loggedRowsTracker = new Set();
 let currentLockedRecord = null; 
+let recordPollGeneration = 0; // 🟢 പുതിയ വേരിയബിൾ: പഴയ പോളിംഗ് തടയാൻ
 
 // 🟢 NEW: Variables for Live Lock Transfer
 let isReadOnlyMode = false;
@@ -124,40 +125,13 @@ async function init() {
   }
 }
 
+// 🟢 FIX 1: searchPlate ലെ തെറ്റായ releaseLock() ഒഴിവാക്കി
 function searchPlate() {
   const inputEl = document.getElementById("selPlate");
-  delete inputEl.dataset.actualPlate; // 🟢 ടൈപ്പ് ചെയ്യുമ്പോൾ പഴയ പ്ലേറ്റ് നമ്പർ മെമ്മറിയിൽ നിന്ന് മായ്ക്കുന്നു
-
   const val = inputEl.value.trim().toUpperCase();
   const sug = document.getElementById("plateSuggestions");
   sug.innerHTML = ""; 
   currentFocus = -1;
-
-  if(document.getElementById("actualLogsheetCount")) {
-      document.getElementById("actualLogsheetCount").innerHTML = "";
-  }
-
-  document.getElementById("dispDName").innerText = "N/A";
-  document.getElementById("dispDMob").innerText = "N/A";
-  document.getElementById("dispOName").innerText = "N/A";
-  document.getElementById("dispOMob").innerText = "N/A";
-  document.getElementById("dispSite").innerText = "N/A";
-  document.getElementById("dispVType").innerText = "N/A";
-  document.getElementById("dispFieldCo").innerText = "N/A";
-  document.getElementById("dispSiteCo").innerText = "N/A";
-  document.getElementById("dispAsset").innerText = "N/A";
-  document.getElementById("dispWorkOrder").innerText = "N/A";
-  document.getElementById("dispSiteStart").innerText = "N/A";
-  document.getElementById("dispSiteEnd").innerText = "N/A";
-  if (document.getElementById("oldVehRow")) document.getElementById("oldVehRow").style.display = "none";
-  if (document.getElementById("newVehRow")) document.getElementById("newVehRow").style.display = "none";
-
-  document.getElementById("invSiteSelect").innerHTML = '<option value="">Waiting for data...</option>';
-  clearInvoiceForm();
-  isEditingInvoice = false;
-  currentInvoices = [];
-  
-  releaseLock();
 
   if (!val) {
     let history = JSON.parse(localStorage.getItem("plateSearchHistory") || "[]");
@@ -251,7 +225,6 @@ function searchPlate() {
 }
 
 function selectPlate(vObj, resolvedPlate) {
-  // 🟢 ഇൻപുട്ടിൽ കാണാൻ മാത്രം resolvedPlate, എന്നാൽ യഥാർത്ഥ പ്ലേറ്റ് dataset-ൽ സൂക്ഷിക്കുന്നു
   const inputEl = document.getElementById("selPlate");
   inputEl.value = (resolvedPlate || vObj.plate_no).toUpperCase();
   inputEl.dataset.actualPlate = vObj.plate_no.toUpperCase();
@@ -357,13 +330,9 @@ async function triggerFetch() {
   const inputEl = document.getElementById("selPlate");
   let rawVal = inputEl.value.trim().toUpperCase();
   
-  // 🟢 "2380 XSB ➔ 1999 NTA" എന്നതിൽ നിന്ന് അവസാനത്തെ മാസ്റ്റർ പ്ലേറ്റ് (1999 NTA) വേർതിരിച്ചെടുക്കുന്നു
   let p = inputEl.dataset.actualPlate || rawVal;
-  if (p.includes("➔")) {
-    p = p.split("➔").pop().trim();
-  } else if (p.includes("->")) {
-    p = p.split("->").pop().trim();
-  }
+  if (p.includes("➔")) p = p.split("➔").pop().trim();
+  else if (p.includes("->")) p = p.split("->").pop().trim();
 
   document.getElementById("plateSuggestions").style.display = "none";
 
@@ -372,12 +341,36 @@ async function triggerFetch() {
     return;
   }
 
-  // 🟢 FIX: പുതിയ പ്ലേറ്റ് ഫെച്ച് ചെയ്യുമ്പോൾ മുൻപത്തെ എല്ലാ ലോക്ക് സ്റ്റേറ്റുകളും പൂർണ്ണമായി റീസെറ്റ് ചെയ്യുന്നു
+  // 🟢 FIX 2: പഴയ പോൾ റിസൾട്ടുകൾ പുതിയ പ്ലേറ്റിനെ ബാധിക്കുന്നത് തടയാൻ ജനറേഷൻ വർദ്ധിപ്പിക്കുന്നു
+  recordPollGeneration++;
   clearInterval(recordPollTimer);
   recordPollTimer = null;
   isReadOnlyMode = false;
   amIWaitingForApproval = false;
   incomingRequestActive = false;
+
+  // 🟢 ക്ലിയറിങ് ഇവിടെ ചെയ്യുന്നു
+  if(document.getElementById("actualLogsheetCount")) {
+      document.getElementById("actualLogsheetCount").innerHTML = "";
+  }
+  document.getElementById("dispDName").innerText = "N/A";
+  document.getElementById("dispDMob").innerText = "N/A";
+  document.getElementById("dispOName").innerText = "N/A";
+  document.getElementById("dispOMob").innerText = "N/A";
+  document.getElementById("dispSite").innerText = "N/A";
+  document.getElementById("dispVType").innerText = "N/A";
+  document.getElementById("dispFieldCo").innerText = "N/A";
+  document.getElementById("dispSiteCo").innerText = "N/A";
+  document.getElementById("dispAsset").innerText = "N/A";
+  document.getElementById("dispWorkOrder").innerText = "N/A";
+  document.getElementById("dispSiteStart").innerText = "N/A";
+  document.getElementById("dispSiteEnd").innerText = "N/A";
+  if (document.getElementById("oldVehRow")) document.getElementById("oldVehRow").style.display = "none";
+  if (document.getElementById("newVehRow")) document.getElementById("newVehRow").style.display = "none";
+  document.getElementById("invSiteSelect").innerHTML = '<option value="">Waiting for data...</option>';
+  clearInvoiceForm();
+  isEditingInvoice = false;
+  currentInvoices = [];
   
   const btnReq = document.getElementById("btnRequestEdit");
   if (btnReq) {
@@ -387,7 +380,7 @@ async function triggerFetch() {
   }
 
   loggedRowsTracker.clear();
-  resetBellButton(); // 🟢 ബെൽ കൗണ്ട്ഡൗൺ റീസെറ്റ് ചെയ്യുന്നു
+  resetBellButton(); 
   savePlateHistory(p);
 
   const inlineLogsheet = document.getElementById("inlineLogsheet");
@@ -396,7 +389,6 @@ async function triggerFetch() {
   const m = document.getElementById("selMonth").value;
   const y = document.getElementById("selYear").value;
 
-  // 🟢 വേറെ പ്ലേറ്റിലേക്കോ മാസത്തിലേക്കോ മാറിയാൽ മാത്രം പഴയ ലോക്ക് റിലീസ് ചെയ്യുക
   if (currentLockedRecord && (currentLockedRecord.plate !== p || currentLockedRecord.month !== m || currentLockedRecord.year !== y)) {
     releaseLock();
   }
@@ -435,7 +427,12 @@ async function triggerFetch() {
     }
 
     if (!lockData.success) {
-      if (lockData.lockedBy) {
+      let currentLoggedUser = "";
+      try {
+        currentLoggedUser = (JSON.parse(localStorage.getItem("timesheetUser") || "{}").username || "").toUpperCase();
+      } catch(e) {}
+
+      if (lockData.lockedBy && lockData.lockedBy.toUpperCase() !== currentLoggedUser) {
         let lockedUser = lockData.lockedBy.toUpperCase();
 
         Swal.fire({
@@ -459,13 +456,13 @@ async function triggerFetch() {
         }
         amIWaitingForApproval = false;
       } else {
-        // 🟢 FIX: അനാവശ്യമായി ലോഗൗട്ട് ആകുന്നത് ഒഴിവാക്കി. സിസ്റ്റം സേഫ് ആയി Read-Only യിൽ ഓപ്പൺ ചെയ്യും.
-        console.warn("Lock acquire notice:", lockData.message);
-        isReadOnlyMode = true;
-        currentLockedRecord = null;
+        console.warn("Lock acquire notice or same user session:", lockData.message);
+        isReadOnlyMode = false;
+        currentLockedRecord = { plate: p, month: m, year: y, leaseId: lockData.leaseId || currentLockedRecord?.leaseId };
+        const btnReq = document.getElementById("btnRequestEdit");
+        if (btnReq) btnReq.style.display = "none";
       }
     } else {
-      // 🟢 OWNERSHIP CONFIRMED: യൂസർ 2 ആക്സസ് നേടിയാൽ ആക്സസ് സുരക്ഷിതമായി നിലനിർത്തുന്നു
       isReadOnlyMode = false;
       currentLockedRecord = { plate: p, month: m, year: y };
       const btnReq = document.getElementById("btnRequestEdit");
@@ -534,7 +531,7 @@ async function triggerFetch() {
         siteArr = [...new Set(activeSites.map((s) => s.site_name))].filter(Boolean);
       }
 
-      // 3. 🟢 Owner Logs (Monthly Filter & Fallback)
+      // 3. Owner Logs
       let activeOwners = (logs.owners || []).filter((o) => {
         let st = o.work_start_date ? new Date(o.work_start_date) : new Date("2000-01-01");
         let ed = o.work_end_date ? new Date(o.work_end_date) : new Date("2099-01-01");
@@ -557,13 +554,11 @@ async function triggerFetch() {
     document.getElementById("dispDMob").innerText = dMobArr.length > 0 ? dMobArr.join(" & ") : (vObjMaster ? vObjMaster.driver_mobile || "N/A" : "N/A");
     document.getElementById("dispSite").innerText = siteArr.length > 0 ? siteArr.join(" & ") : (vObjMaster ? vObjMaster.site_name || "N/A" : "N/A");
     
-    // 🟢 Owner Details directly populated from Owner Log
     document.getElementById("dispOName").innerText = oNameArr.length > 0 ? oNameArr.join(" & ") : (vObjMaster ? vObjMaster.owner_name || "N/A" : "N/A");
     document.getElementById("dispOMob").innerText = oMobArr.length > 0 ? oMobArr.join(" & ") : (vObjMaster ? vObjMaster.owner_mobile || "N/A" : "N/A");
     
     document.getElementById("dispVType").innerText = vObjMaster ? vObjMaster.vehicle_type || "N/A" : "N/A";
 
-    // Global variable ആയി activeSites സേവ് ചെയ്യുന്നു (Invoice site മാറുമ്പോൾ റീയൂസ് ചെയ്യാൻ)
     window.currentActiveSitesList = activeSites;
     window.currentVehicleMasterObj = vObjMaster;
 
@@ -592,7 +587,6 @@ async function triggerFetch() {
       clearInvoiceForm();
     }
 
-    // 🟢 RESTORED: Fetch and Display Actual Logsheet Count
     fetch("/timesheet/api/logsheets/list", {
       method: "POST",
       headers: {
@@ -634,6 +628,17 @@ async function triggerFetch() {
     try {
         renderGrid(m, y, p, existingData, sStartVal, sEndVal, logs, pLogsForGrid);
         await applyLockStatus(m, y, false);
+
+        const saveLabel = document.getElementById("saveStatus");
+        if (saveLabel) {
+            if (isReadOnlyMode) {
+                saveLabel.innerText = "Read Only";
+                saveLabel.className = "save-indicator status-saving";
+            } else {
+                saveLabel.innerText = "Editable";
+                saveLabel.className = "save-indicator";
+            }
+        }
         
         if(typeof startRecordPoll === "function") {
             startRecordPoll(p, m, y);
@@ -654,13 +659,10 @@ async function triggerFetch() {
   }
 }
 
-// 🟢 NEW: Site Log Details Card അപ്ഡേറ്റ് ചെയ്യുന്ന ഹെൽപ്പർ ഫംഗ്ഷൻ (Old / New Vehicle സഹിതം)
-// 🟢 NEW: ഒന്നിലധികം സൈറ്റുകൾ ഉള്ളപ്പോൾ നിർദ്ദിഷ്ട സൈറ്റിന്റെ മണിക്കൂറുകൾ മാത്രം കണക്കാക്കുന്നു
 function calculateHoursForSite(targetSiteLog) {
   const siteHoursBlock = document.getElementById("siteHoursBlock");
   if (!siteHoursBlock) return;
 
-  // ഒരു സൈറ്റ് മാത്രമാണെങ്കിൽ ഈ ബ്ലോക്ക് കാണിക്കേണ്ടതില്ല
   if (!window.currentActiveSitesList || window.currentActiveSitesList.length <= 1 || !targetSiteLog) {
     siteHoursBlock.style.display = "none";
     return;
@@ -682,7 +684,6 @@ function calculateHoursForSite(targetSiteLog) {
     let curDate = new Date(year, mIdx, i);
     curDate.setHours(12, 0, 0, 0);
 
-    // സൈറ്റ് ആക്ടീവ് ആയ തീയതിക്കുള്ളിൽ ആണോ എന്ന് നോക്കുന്നു
     if (curDate >= stDate && curDate <= edDate) {
       let tm = parseFloat(document.getElementById(`time_${i}`)?.value) || 0;
       let bd = document.querySelector(`.grid-input[data-row="${i}"][data-col="bd"]`)?.value.trim().toUpperCase() || "";
@@ -705,7 +706,6 @@ function calculateHoursForSite(targetSiteLog) {
       if (bd === "ID" || bd === "NP") {
         if (isFullOT) ot = 10; else nr = 10;
       } else if (["BD", "NW", "NS", "NR", "H", "AB", "DC", "SC", "R", "WS", "RE", "FRI", "Fri"].includes(bd)) {
-        // No hours
       } else if (tm > 0) {
         if (isFullOT) {
           ot = tm;
@@ -758,7 +758,6 @@ function updateSiteLogDetailsCard(targetSiteLog) {
   document.getElementById("dispAsset").innerText = targetSiteLog.asset_code || (vMaster ? vMaster.asset_code : "N/A");
   document.getElementById("dispWorkOrder").innerText = targetSiteLog.work_order_no || (vMaster ? vMaster.wrk_order_no : "N/A");
 
-  // 🟢 Old Vehicle ഉണ്ടെങ്കിൽ മാത്രം കാണിക്കുന്നു
   if (targetSiteLog.old_vehicle_no && targetSiteLog.old_vehicle_no.trim() !== "" && targetSiteLog.old_vehicle_no !== "null") {
     document.getElementById("dispOldVeh").innerText = targetSiteLog.old_vehicle_no.toUpperCase();
     if (oldVehRow) oldVehRow.style.display = "flex";
@@ -766,7 +765,6 @@ function updateSiteLogDetailsCard(targetSiteLog) {
     if (oldVehRow) oldVehRow.style.display = "none";
   }
 
-  // 🟢 New Vehicle ഉണ്ടെങ്കിൽ മാത്രം കാണിക്കുന്നു
   if (targetSiteLog.new_vehicle_no && targetSiteLog.new_vehicle_no.trim() !== "" && targetSiteLog.new_vehicle_no !== "null") {
     document.getElementById("dispNewVeh").innerText = targetSiteLog.new_vehicle_no.toUpperCase();
     if (newVehRow) newVehRow.style.display = "flex";
@@ -774,11 +772,9 @@ function updateSiteLogDetailsCard(targetSiteLog) {
     if (newVehRow) newVehRow.style.display = "none";
   }
 
-  // 🟢 Multi-site ഉണ്ടെങ്കിൽ നിർദ്ദിഷ്ട സൈറ്റിന്റെ മണിക്കൂറുകൾ അപ്ഡേറ്റ് ചെയ്യുന്നു
   calculateHoursForSite(targetSiteLog);
 }
 
-// 🟢 Invoice Site ഡ്രോപ്പ്ഡൗൺ മാറുമ്പോൾ Invoice ഫോമും ഒപ്പം Site Log Details കാർഡും അപ്ഡേറ്റ് ആകുന്നു
 function loadInvoiceForSelectedSite() {
   const selectedSite = document.getElementById("invSiteSelect").value;
   if (!selectedSite) {
@@ -787,7 +783,6 @@ function loadInvoiceForSelectedSite() {
     return;
   }
 
-  // തിരഞ്ഞെടുത്ത സൈറ്റിൻ്റെ ശരിയായ Site Log കണ്ടെത്തുന്നു
   if (window.currentActiveSitesList && window.currentActiveSitesList.length > 0) {
     const matchedSiteLog = window.currentActiveSitesList.find(s => s.site_name === selectedSite) || window.currentActiveSitesList[0];
     updateSiteLogDetailsCard(matchedSiteLog);
@@ -836,7 +831,6 @@ function renderGrid(
   const cleanVal = (val) =>
     val === null || val === "null" || val === undefined ? "" : val;
 
-  // 🟢 ആ മാസത്തിൽ പ്ലേറ്റ് നമ്പർ ചേഞ്ച് നടന്നിട്ടുണ്ടോ എന്ന് പരിശോധിക്കുന്നു
   let activeMonthChanges = [];
   if (plateLogs && plateLogs.length > 0) {
     activeMonthChanges = plateLogs.filter(pl => {
@@ -846,7 +840,6 @@ function renderGrid(
     });
   }
 
-  // 🟢 ശുദ്ധമായ മാസ്റ്റർ പ്ലേറ്റ് നമ്പർ എടുക്കുന്നു (Arrow ചിഹ്നങ്ങൾ പൂർണ്ണമായി ഒഴിവാക്കുന്നു)
   let cleanMasterPlate = plate;
   if (cleanMasterPlate.includes("➔")) cleanMasterPlate = cleanMasterPlate.split("➔").pop().trim();
   else if (cleanMasterPlate.includes("->")) cleanMasterPlate = cleanMasterPlate.split("->").pop().trim();
@@ -857,7 +850,6 @@ function renderGrid(
     let dbDist = cleanVal(rowData.calc_distance);
     if (dbDist !== "") dbDist = parseFloat(dbDist).toFixed(1);
 
-    // 🟢 ടേബിളിൽ കൃത്യമായ ഒരൊറ്റ പ്ലേറ്റ് നമ്പർ മാത്രം വരുന്നു
     let dayPlate = cleanMasterPlate;
     let curDateObj = new Date(parseInt(year), mIdx, i);
     curDateObj.setHours(0, 0, 0, 0);
@@ -957,7 +949,6 @@ function renderGrid(
   attachGridEvents();
   updateSummaryBox();
 
-  // 🟢 FIX: Grid table render aayi kazhinja shesham Site Summary recalculate cheyyunnu
   if (typeof loadInvoiceForSelectedSite === "function") {
     loadInvoiceForSelectedSite();
   }
@@ -1059,7 +1050,6 @@ function updateSummaryBox() {
   if (tFuel > 0) mileage = (tDist / tFuel).toFixed(2);
   document.getElementById("sumMileage").innerText = mileage;
 
-  // 🟢 FIX: Main summary update aavumbol Site Summary-yum auto refresh aakunnu
   const curSite = document.getElementById("invSiteSelect")?.value;
   if (curSite && window.currentActiveSitesList && window.currentActiveSitesList.length > 0) {
     const matchedLog = window.currentActiveSitesList.find(s => s.site_name === curSite) || window.currentActiveSitesList[0];
@@ -2162,7 +2152,15 @@ async function applyLockStatus(selectedMonthStr, selectedYearStr, silent = false
         const lockBtn = document.getElementById("btnPeriodLock");
         if (lockBtn) lockBtn.style.display = "none";
 
-        if (isReadOnlyMode) return;
+        // 🟢 റെക്കോർഡ് ലോക്ക് കാരണം Read-Only മോഡിൽ ആണെങ്കിൽ ഇൻപുട്ടുകൾ എനേബിൾ ചെയ്യരുത്!
+        if (isReadOnlyMode) {
+            document.querySelectorAll(".grid-input").forEach(el => {
+                el.disabled = true;
+                el.style.backgroundColor = "#f1f5f9";
+                el.style.cursor = "not-allowed";
+            });
+            return;
+        }
 
         let isUIDisabled = document.querySelector(".grid-input")?.disabled === true;
         if (isUIDisabled) {
@@ -2194,7 +2192,10 @@ window.addEventListener("focus", async () => {
 
 function startRecordPoll(p, m, y) {
   clearInterval(recordPollTimer);
+  const generation = recordPollGeneration; // 🟢 നിലവിലെ ജനറേഷൻ ഓർത്തു വെക്കുന്നു
   recordPollTimer = setInterval(async () => {
+      if (generation !== recordPollGeneration) return; // 🟢 പ്ലേറ്റ് മാറിയാൽ പഴയ പോൾ തടയുന്നു
+
       try {
           const ts = new Date().getTime(); 
           const res = await fetch(`/timesheet/api/record-lock/poll?plate=${p}&month=${m}&year=${y}&_t=${ts}`, {
@@ -2206,6 +2207,7 @@ function startRecordPoll(p, m, y) {
               cache: "no-store"
           });
           const data = await res.json();
+          if (generation !== recordPollGeneration) return; 
           const userStr = localStorage.getItem("timesheetUser");
           if (!userStr) return;
           const user = JSON.parse(userStr).username.trim().toLowerCase();
