@@ -28,6 +28,7 @@ let isEditingInvoice = false;
 let currentInvoices = [];
 let loggedRowsTracker = new Set();
 let currentLockedRecord = null; 
+let recordPollGeneration = 0;
 
 // 🟢 NEW: Variables for Live Lock Transfer
 let isReadOnlyMode = false;
@@ -375,6 +376,7 @@ async function triggerFetch() {
   // 🟢 FIX: പുതിയ പ്ലേറ്റ് ഫെച്ച് ചെയ്യുമ്പോൾ മുൻപത്തെ എല്ലാ ലോക്ക് സ്റ്റേറ്റുകളും പൂർണ്ണമായി റീസെറ്റ് ചെയ്യുന്നു
   clearInterval(recordPollTimer);
   recordPollTimer = null;
+  recordPollGeneration++;
   isReadOnlyMode = false;
   amIWaitingForApproval = false;
   incomingRequestActive = false;
@@ -2194,10 +2196,15 @@ window.addEventListener("focus", async () => {
 
 function startRecordPoll(p, m, y) {
   clearInterval(recordPollTimer);
+  const generation = ++recordPollGeneration;
+  let pollInFlight = false;
   recordPollTimer = setInterval(async () => {
+    if (pollInFlight) return;
+      pollInFlight = true;
       try {
           const ts = new Date().getTime(); 
-          const res = await fetch(`/timesheet/api/record-lock/poll?plate=${p}&month=${m}&year=${y}&_t=${ts}`, {
+          const params = new URLSearchParams({ plate: p, month: m, year: y, _t: ts });
+          const res = await fetch(`/timesheet/api/record-lock/poll?${params}`, {
               headers: { 
                   "Authorization": "Bearer " + token,
                   "Cache-Control": "no-cache",
@@ -2206,29 +2213,42 @@ function startRecordPoll(p, m, y) {
               cache: "no-store"
           });
           const data = await res.json();
-          const userStr = localStorage.getItem("timesheetUser");
-          if (!userStr) return;
-          const user = JSON.parse(userStr).username.trim().toLowerCase();
+           if (generation !== recordPollGeneration || !res.ok || data.success === false) return;
 
-          const isMe = data.owner && data.owner.trim().toLowerCase() === user;
-          const isRequestedByMe = data.requestedBy && data.requestedBy.trim().toLowerCase() === user;
+          const isMe = data.isOwner;
+          const isRequestedByMe = data.requestedByMe;
           const isRejected = data.requestedBy === "REJECTED";
 
           if (!data.locked) {
-              // 🟢 FIX: Read-only മോഡിലുള്ള യൂസർ തനിയെ ലോക്ക് തിരിച്ചുപിടിക്കാൻ പാടില്ല!
-              // യൂസർ Fetch അടിച്ചാലോ ബെല്ലടിച്ചാലോ മാത്രമേ ആക്സസ് കിട്ടാവൂ.
-              return;
+               if (currentLockedRecord && !isReadOnlyMode) {
+                  const claimRes = await fetch('/timesheet/api/record-lock/request', {
+                      method: 'POST',
+                      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+                      body: JSON.stringify({ plate: p, month: m, year: y })
+                  });
+                  const claim = await claimRes.json();
+                  if (generation !== recordPollGeneration) return;
+                  if (claim.success) return;
+                  if (claim.lockedBy) {
+                      data.locked = true;
+                      data.owner = claim.lockedBy;
+                  } else {
+                      return;
+                  }
+              } else {
+                  return;
+              }
           }
 
-          if (isMe) {
-              // 🟢 യൂസർ 2 ആക്സസ് നേടിയാൽ ലോക്ക് ഓണർഷിപ്പ് സെറ്റ് ചെയ്യുന്നു
+          if (isMe && data.owner) {
               currentLockedRecord = { plate: p, month: m, year: y };
 
               if (isReadOnlyMode) {
                   isReadOnlyMode = false;
                   amIWaitingForApproval = false;
                   resetBellButton();
-                  clearInterval(recordPollTimer); 
+                  document.getElementById("btnRequestEdit").style.display = "none";
+                   clearInterval(recordPollTimer);
                   
                   Swal.fire({
                       title: "Access Granted! 🔓",
@@ -2237,18 +2257,20 @@ function startRecordPoll(p, m, y) {
                       timer: 1500,
                       showConfirmButton: false
                   }).then(() => {
-                      triggerFetch(); 
+                      if (generation === recordPollGeneration) triggerFetch();
                   });
                   return;
               }
 
               if (data.requestedBy && data.requestedBy !== "REJECTED" && !incomingRequestActive) {
                   incomingRequestActive = true;
-                  // 🟢 Popup load aavunnathinu munpu thanne sound play aakunnu (Works in Background Tabs)
                   playTransferAlertSound();
                   showTransferRequestPopup(data.requestedBy, p, m, y);
               }
-          } else {
+         return;
+          }
+
+          if (data.owner) {
               if (!isReadOnlyMode) {
                   isReadOnlyMode = true;
                   currentLockedRecord = null;
@@ -2264,6 +2286,9 @@ function startRecordPoll(p, m, y) {
                     timerProgressBar: true
                   });
               }
+              const requestButton = document.getElementById("btnRequestEdit");
+              requestButton.style.display = "inline-block";
+              if (!amIWaitingForApproval) resetBellButton();
 
               // 3. I AM THE REQUESTER WAITING FOR RESPONSE
               if (amIWaitingForApproval) {
@@ -2287,13 +2312,15 @@ function startRecordPoll(p, m, y) {
                   } else if (!data.requestedBy) {
                       // 🟢 FAILSAFE: Active user closed tab or lock released naturally
                       amIWaitingForApproval = false;
-                      const btn = document.getElementById("btnRequestEdit");
-                      btn.style.opacity = "1";
-                      btn.disabled = false;
+                        resetBellButton();
                   }
               }
           }
-      } catch (e) {}
+      } catch (e) {
+          console.error("Record lock poll failed:", e);
+      } finally {
+          pollInFlight = false;
+      }
   }, 5000); 
 }
 
@@ -2318,7 +2345,10 @@ function resetBellButton() {
 }
 
 async function requestEditAccess() {
-  const p = document.getElementById("selPlate").value.trim().toUpperCase();
+  const plateInput = document.getElementById("selPlate");
+  let p = plateInput.dataset.actualPlate || plateInput.value.trim().toUpperCase();
+  if (p.includes("➔")) p = p.split("➔").pop().trim();
+  else if (p.includes("->")) p = p.split("->").pop().trim();
   const m = document.getElementById("selMonth").value;
   const y = document.getElementById("selYear").value;
   
