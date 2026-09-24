@@ -3,7 +3,7 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-const { randomUUID } = require("crypto");
+const { randomUUID, createHash } = require("crypto");
 const {
   verifyToken,
   verifySuperAdmin,
@@ -291,6 +291,7 @@ router.post("/api/add-rule", verifySuperAdmin, async (req, res) => {
   }
 });
  
+ 
 // ==========================================
 // SPECIAL DAYS & EXCEPTION RULES API
 // ==========================================
@@ -556,7 +557,7 @@ router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.get("/api/all-logs", verifyToken, async (req, res) => {
   try {
     const driverLogs = await pool.query(`
@@ -799,8 +800,7 @@ router.post("/api/update-driver-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
-  
-// 🟢 Reverse Sync for Site Updates (Optimized with Transactions & Field/Site CO)
+  // 🟢 Reverse Sync for Site Updates (Optimized with Transactions & Field/Site CO)
 router.post("/api/update-site-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -969,6 +969,7 @@ router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
 // ==========================================
 const recordLockTimeout = 10 * 60 * 1000;
 const transferRequestTimeout = 15 * 1000;
+const backgroundLockTimeout = 30 * 1000;
 let recordLockTableReady;
  
 function recordLockKey({ plate, month, year }) {
@@ -976,8 +977,9 @@ function recordLockKey({ plate, month, year }) {
   return `${String(plate).replace(/\s+/g, "").toUpperCase()}_${String(month).trim().toLowerCase()}_${String(year).trim()}`;
 }
  
-function sameLockUser(first, second) {
-  return String(first).trim().toLowerCase() === String(second).trim().toLowerCase();
+function recordLockOwner(req) {
+  const clientId = req.body?.clientId || req.query?.clientId || "";
+  return createHash("sha256").update(`${req.headers.authorization}:${clientId}`).digest("hex");
 }
  
 function ensureRecordLockTable() {
@@ -986,29 +988,37 @@ function ensureRecordLockTable() {
       CREATE TABLE IF NOT EXISTS timesheet_record_locks (
         lock_key TEXT PRIMARY KEY,
         username TEXT NOT NULL,
+        owner_id TEXT,
         lease_id TEXT,
         last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        background_at TIMESTAMPTZ,
         requested_by TEXT,
+        requested_owner_id TEXT,
         request_time TIMESTAMPTZ,
         requester_seen_at TIMESTAMPTZ
       )
-    `).catch(error => {
+    `).then(async () => {
+      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS owner_id TEXT");
+      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS requested_owner_id TEXT");
+      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS background_at TIMESTAMPTZ");
+    }).catch(error => {
       recordLockTableReady = null;
       throw error;
     });
   }
   return recordLockTableReady;
 }
-
+ 
 function activeRecordLock(lock) {
-  return lock && Date.now() - new Date(lock.last_seen_at).getTime() < recordLockTimeout ? lock : null;
+  return lock && Date.now() - new Date(lock.last_seen_at).getTime() < recordLockTimeout &&
+    (!lock.background_at || Date.now() - new Date(lock.background_at).getTime() < backgroundLockTimeout) ? lock : null;
 }
-
+ 
 function pendingRequester(lock) {
   return lock.requested_by && lock.requested_by !== "REJECTED" &&
     Date.now() - new Date(lock.requester_seen_at).getTime() < transferRequestTimeout;
 }
-
+ 
 async function withRecordLock(lockKey, callback) {
   await ensureRecordLockTable();
   const client = await pool.connect();
@@ -1024,8 +1034,8 @@ async function withRecordLock(lockKey, callback) {
   } finally {
     client.release();
   }
- }
-
+}
+ 
 function recordLockError(res, error) {
   console.error("Timesheet record lock error:", error);
   res.status(503).json({ success: false, message: "Record lock unavailable. Please try again." });
@@ -1036,20 +1046,23 @@ router.post("/api/record-lock/request", verifyToken, async (req, res) => {
   if (!lockKey) {
     return res.json({ success: false, message: "Missing lock parameters" });
   }
- try {
+  try {
     await ensureRecordLockTable();
     const username = String(req.user.username).trim();
+    const ownerId = recordLockOwner(req);
     const leaseId = randomUUID();
     const claim = await pool.query(`
-      INSERT INTO timesheet_record_locks (lock_key, username, lease_id)
-      VALUES ($1, $2, $3)
+      INSERT INTO timesheet_record_locks (lock_key, username, owner_id, lease_id)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (lock_key) DO UPDATE SET
-        username = EXCLUDED.username, lease_id = EXCLUDED.lease_id,
-        last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL
+        username = EXCLUDED.username, owner_id = EXCLUDED.owner_id, lease_id = EXCLUDED.lease_id,
+        last_seen_at = NOW(), background_at = NULL, requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL
       WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
-         OR LOWER(TRIM(timesheet_record_locks.username)) = LOWER(TRIM(EXCLUDED.username))
+         OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds'
+         OR timesheet_record_locks.owner_id = EXCLUDED.owner_id
+         OR (timesheet_record_locks.owner_id IS NULL AND timesheet_record_locks.lease_id = $5)
       RETURNING username
-    `, [lockKey, username, leaseId]);
+    `, [lockKey, username, ownerId, leaseId, req.body.leaseId || null]);
     if (claim.rows.length) return res.json({ success: true, owner: username, leaseId });
     const holder = await pool.query("SELECT username FROM timesheet_record_locks WHERE lock_key = $1", [lockKey]);
     res.json({ success: false, lockedBy: holder.rows[0]?.username, message: "Record is locked. Please retry." });
@@ -1063,8 +1076,24 @@ router.post("/api/record-lock/release", verifyToken, async (req, res) => {
   if (!lockKey) return res.json({ success: true });
   try {
     await ensureRecordLockTable();
-    await pool.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1 AND LOWER(TRIM(username)) = LOWER(TRIM($2)) AND lease_id = $3", [lockKey, req.user.username, req.body.leaseId || null]);
+    await pool.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1 AND lease_id = $2 AND (owner_id = $3 OR owner_id IS NULL)", [lockKey, req.body.leaseId || null, recordLockOwner(req)]);
     res.json({ success: true });
+  } catch (error) {
+    recordLockError(res, error);
+  }
+});
+ 
+router.post("/api/record-lock/background", verifyToken, async (req, res) => {
+  const lockKey = recordLockKey(req.body);
+  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
+  try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (!lock || !req.body.leaseId || lock.lease_id !== req.body.leaseId ||
+          (lock.owner_id !== recordLockOwner(req) && lock.owner_id !== null)) return { success: false };
+      await client.query("UPDATE timesheet_record_locks SET background_at = NOW() WHERE lock_key = $1", [lockKey]);
+      return { success: true };
+    });
+    res.json(result);
   } catch (error) {
     recordLockError(res, error);
   }
@@ -1074,19 +1103,20 @@ router.post("/api/record-lock/resolve-transfer", verifyToken, async (req, res) =
   const { action } = req.body;
   const lockKey = recordLockKey(req.body);
   if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
- try {
+  try {
     const result = await withRecordLock(lockKey, async (client, lock) => {
       if (!lock) return { success: false, message: "No active lock" };
       const requester = lock.requested_by;
       if (action === "force" && requester && requester !== "REJECTED" &&
-          sameLockUser(requester, req.user.username) &&
+          lock.requested_owner_id === recordLockOwner(req) &&
+          pendingRequester(lock) &&
           lock.request_time && Date.now() - new Date(lock.request_time).getTime() >= 30000) {
-        await client.query("UPDATE timesheet_record_locks SET username = $2, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester]);
+        await client.query("UPDATE timesheet_record_locks SET username = $2, owner_id = $3, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester, lock.requested_owner_id]);
         return { success: true, newOwner: requester };
       }
-      if (sameLockUser(lock.username, req.user.username) && req.body.leaseId === lock.lease_id) {
-        if (action === "approve" && pendingRequester(lock) && !sameLockUser(lock.username, requester)) {
-          await client.query("UPDATE timesheet_record_locks SET username = $2, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester]);
+      if ((lock.owner_id === recordLockOwner(req) || lock.owner_id === null) && req.body.leaseId && req.body.leaseId === lock.lease_id) {
+        if (action === "approve" && pendingRequester(lock) && lock.requested_owner_id !== recordLockOwner(req)) {
+          await client.query("UPDATE timesheet_record_locks SET username = $2, owner_id = $3, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester, lock.requested_owner_id]);
           return { success: true, newOwner: requester };
         }
         if (action === "reject" && pendingRequester(lock)) {
@@ -1109,18 +1139,20 @@ router.get("/api/record-lock/poll", verifyToken, async (req, res) => {
   try {
     const result = await withRecordLock(lockKey, async (client, lock) => {
       if (!lock) return { locked: false };
-      const isOwner = sameLockUser(lock.username, req.user.username) &&
-        (!lock.lease_id || lock.lease_id === req.query.leaseId);
+      const ownerId = recordLockOwner(req);
+      const isOwner = lock.owner_id === ownerId &&
+        (!lock.lease_id || lock.lease_id === req.query.leaseId) ||
+        lock.owner_id === null && !!req.query.leaseId && lock.lease_id === req.query.leaseId;
       if (isOwner && lock.lease_id) {
-        await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
+        await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW(), owner_id = $2 WHERE lock_key = $1", [lockKey, ownerId]);
       }
-      const requestedBy = pendingRequester(lock) ? lock.requested_by : lock.requested_by === "REJECTED" ? "REJECTED" : null;
-      if (requestedBy && requestedBy !== "REJECTED" && sameLockUser(requestedBy, req.user.username)) {
+      const requestedBy = pendingRequester(lock) ? lock.requested_by : lock.requested_by === "REJECTED" && lock.requested_owner_id === ownerId ? "REJECTED" : null;
+      if (requestedBy && requestedBy !== "REJECTED" && lock.requested_owner_id === ownerId) {
         await client.query("UPDATE timesheet_record_locks SET requester_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
       }
       return {
         locked: true, owner: lock.username, isOwner, requestedBy,
-        requestedByMe: !!requestedBy && requestedBy !== "REJECTED" && sameLockUser(requestedBy, req.user.username),
+        requestedByMe: !!requestedBy && requestedBy !== "REJECTED" && lock.requested_owner_id === ownerId,
         requestTime: lock.request_time ? new Date(lock.request_time).getTime() : null,
       };
     });
@@ -1136,11 +1168,12 @@ router.post("/api/record-lock/request-transfer", verifyToken, async (req, res) =
   try {
     const result = await withRecordLock(lockKey, async (client, lock) => {
       if (!lock) return { success: false, message: "Record is not currently locked." };
-      if (sameLockUser(lock.username, req.user.username)) return { success: false, message: "You already have edit access." };
-      if (pendingRequester(lock) && !sameLockUser(lock.requested_by, req.user.username)) {
+      const ownerId = recordLockOwner(req);
+      if (lock.owner_id === ownerId) return { success: false, message: "You already have edit access." };
+      if (pendingRequester(lock) && lock.requested_owner_id !== ownerId) {
         return { success: false, message: "Another request is pending." };
       }
-      await client.query("UPDATE timesheet_record_locks SET requested_by = $2, request_time = NOW(), requester_seen_at = NOW() WHERE lock_key = $1", [lockKey, req.user.username]);
+      await client.query("UPDATE timesheet_record_locks SET requested_by = $2, requested_owner_id = $3, request_time = NOW(), requester_seen_at = NOW() WHERE lock_key = $1", [lockKey, req.user.username, ownerId]);
       return { success: true };
     });
     res.json(result);
@@ -1154,8 +1187,26 @@ router.post("/api/record-lock/clear-rejection", verifyToken, async (req, res) =>
   if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
   try {
     const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (lock && lock.requested_by === "REJECTED" && !sameLockUser(lock.username, req.user.username)) {
-        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+      if (lock && lock.requested_by === "REJECTED" && lock.requested_owner_id === recordLockOwner(req)) {
+        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+      }
+      return { success: true };
+    });
+    res.json(result);
+  } catch (error) {
+    recordLockError(res, error);
+  }
+});
+ 
+router.post("/api/record-lock/cancel-transfer", verifyToken, async (req, res) => {
+  const lockKey = recordLockKey(req.body);
+  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
+  try {
+    const result = await withRecordLock(lockKey, async (client, lock) => {
+      if (lock && lock.requested_owner_id === recordLockOwner(req)) {
+        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+      } else if (lock && lock.owner_id === recordLockOwner(req) && !lock.lease_id) {
+        await client.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1", [lockKey]);
       }
       return { success: true };
     });
@@ -1251,7 +1302,7 @@ router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
     ];
     if (!allowedCols.includes(col_name))
       return res.json({ success: false, message: "Invalid column parameter" });
- 
+    
     const username = req.user.username;
     const lockKey = recordLockKey({ plate: plate_no, month, year });
     if (!lockKey || !req.body.leaseId) return res.json({ success: false, lockLost: true, message: "Edit access required. Fetch this record again." });
@@ -1260,12 +1311,12 @@ router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
     await client.query("BEGIN");
     const lockResult = await client.query("SELECT * FROM timesheet_record_locks WHERE lock_key = $1 FOR UPDATE", [lockKey]);
     const lock = activeRecordLock(lockResult.rows[0]);
-    if (!lock || !sameLockUser(lock.username, username) || lock.lease_id !== req.body.leaseId) {
+    if (!lock || (lock.owner_id !== recordLockOwner(req) && lock.owner_id !== null) || lock.lease_id !== req.body.leaseId) {
       await client.query("ROLLBACK");
       return res.json({ success: false, lockLost: true, lockedBy: lock?.username, message: lock ? `Record is locked by ${lock.username}` : "Edit access expired. Fetch this record again." });
     }
-  await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
-
+    await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
+ 
 const query = `
             INSERT INTO timesheet_daily_records (month, year, plate_no, record_date, "${col_name}", calc_distance, calc_time, modified_by) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
@@ -1277,7 +1328,7 @@ const query = `
                 modified_by = EXCLUDED.modified_by,
                 updated_at = CURRENT_TIMESTAMP
         `;
-     await client.query(query, [
+    await client.query(query, [
       month,
       year,
       plate_no,
@@ -1314,23 +1365,26 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
     await client.query("BEGIN");
     
     const username = req.user.username; // Extracting user from token via verifyEditor
- const importLeaseId = randomUUID();
+    const ownerId = recordLockOwner(req);
+    const importLeaseId = randomUUID();
     const lockKeys = [...new Set(records.map(row => recordLockKey({ plate: row.plate_no, month: row.month, year: row.year })))].sort();
     if (lockKeys.includes(null)) throw new Error("Missing record lock parameters");
     for (const lockKey of lockKeys) {
       const claim = await client.query(`
-        INSERT INTO timesheet_record_locks (lock_key, username, lease_id) VALUES ($1, $2, $3)
+        INSERT INTO timesheet_record_locks (lock_key, username, owner_id, lease_id) VALUES ($1, $2, $3, $4)
         ON CONFLICT (lock_key) DO UPDATE SET
-          username = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' THEN EXCLUDED.username ELSE timesheet_record_locks.username END,
-          lease_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' THEN EXCLUDED.lease_id ELSE timesheet_record_locks.lease_id END,
-          last_seen_at = NOW()
+          username = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.username ELSE timesheet_record_locks.username END,
+          owner_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.owner_id ELSE timesheet_record_locks.owner_id END,
+          lease_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.lease_id ELSE timesheet_record_locks.lease_id END,
+          last_seen_at = NOW(), background_at = NULL
         WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
-           OR (LOWER(TRIM(timesheet_record_locks.username)) = LOWER(TRIM(EXCLUDED.username)) AND timesheet_record_locks.lease_id = $4)
+           OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds'
+           OR ((timesheet_record_locks.owner_id = EXCLUDED.owner_id OR timesheet_record_locks.owner_id IS NULL) AND timesheet_record_locks.lease_id = $5)
         RETURNING lease_id
-      `, [lockKey, username, importLeaseId, req.body.leaseId || null]);
+      `, [lockKey, username, ownerId, importLeaseId, req.body.leaseId || null]);
       if (!claim.rows.length) throw new Error("A record is locked by another editor. Try again after edit access is available.");
     }
-
+ 
     // Batch Processing Logic to speed up large imports (reduces overhead)
     for (let i = 0; i < records.length; i += 1000) {
       const batch = records.slice(i, i + 1000);
@@ -1551,7 +1605,7 @@ router.post("/api/db/add-column", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+  
 router.post("/api/db/rename-column", verifySuperAdmin, async (req, res) => {
   try {
     const { old_name, new_name } = req.body;
@@ -2047,7 +2101,7 @@ router.post("/api/db/update-plate-no", verifyEditor, async (req, res) => {
     client.release();
   }
 });
-
+ 
 // KLM Security Check Route
 router.post("/api/verify-klm", (req, res) => {
   try {
@@ -2125,3 +2179,4 @@ runAutoLock();
 setInterval(runAutoLock, 12 * 60 * 60 * 1000);
  
 module.exports = router;
+ 
