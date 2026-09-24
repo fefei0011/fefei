@@ -3,16 +3,15 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
-const { randomUUID, createHash } = require("crypto");
 const {
   verifyToken,
   verifySuperAdmin,
   verifyEditor,
 } = require("../middlewares/auth");
 const router = express.Router();
- 
+
 const JWT_SECRET = process.env.JWT_SECRET;
- 
+
 // Helper function for Audit Logging
 async function logAudit(user, action, details) {
   try {
@@ -25,7 +24,7 @@ async function logAudit(user, action, details) {
     console.error("Audit Log Failed:", e.message);
   }
 }
- 
+
 // ==========================================
 // AUDIT LOGS API
 // ==========================================
@@ -39,7 +38,7 @@ router.get("/api/audit-logs", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // ==========================================
 // AUTH & ADMIN
 // ==========================================
@@ -67,7 +66,7 @@ router.post("/register", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -83,7 +82,7 @@ router.post("/login", async (req, res) => {
       return res.json({ success: false, message: "Invalid password." });
     if (user.status !== "Active")
       return res.json({ success: false, message: "Account Pending." });
- 
+
     const token = jwt.sign(
       {
         id: user.id,
@@ -104,7 +103,7 @@ router.post("/login", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/forgot-password/request", async (req, res) => {
   try {
     const { email } = req.body;
@@ -114,16 +113,16 @@ router.post("/forgot-password/request", async (req, res) => {
     );
     if (userRes.rows.length === 0)
       return res.json({ success: false, message: "Email not found." });
- 
+
     const username = userRes.rows[0].username;
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date(Date.now() + 10 * 60 * 1000);
- 
+
     await pool.query(
       "UPDATE timesheet_users SET reset_otp = $1, otp_expiry = $2 WHERE email = $3",
       [otp, expiry, email],
     );
- 
+
     let transporter = nodemailer.createTransport({
       service: "gmail",
       auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
@@ -134,7 +133,7 @@ router.post("/forgot-password/request", async (req, res) => {
       subject: `Password Reset OTP`,
       html: `<div style="padding:20px;"><h2>Password Reset Request</h2><p>Hello ${username},</p><p>Your OTP is: <b style="font-size:24px; color:#0d6efd;">${otp}</b></p></div>`,
     });
- 
+
     await logAudit(
       { username: email },
       "OTP_REQUEST",
@@ -145,7 +144,7 @@ router.post("/forgot-password/request", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/forgot-password/reset", async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
@@ -158,14 +157,14 @@ router.post("/forgot-password/reset", async (req, res) => {
         success: false,
         message: "No active OTP request found.",
       });
- 
+
     const storedData = userRes.rows[0];
     if (!storedData.reset_otp)
       return res.json({
         success: false,
         message: "No active OTP request found.",
       });
- 
+
     if (new Date() > new Date(storedData.otp_expiry)) {
       await pool.query(
         "UPDATE timesheet_users SET reset_otp = NULL, otp_expiry = NULL WHERE email = $1",
@@ -173,16 +172,16 @@ router.post("/forgot-password/reset", async (req, res) => {
       );
       return res.json({ success: false, message: "OTP expired." });
     }
- 
+
     if (storedData.reset_otp !== otp)
       return res.json({ success: false, message: "Incorrect OTP." });
- 
+
     const hashedNew = await bcrypt.hash(newPassword, 10);
     await pool.query(
       "UPDATE timesheet_users SET password_hash = $1, reset_otp = NULL, otp_expiry = NULL WHERE email = $2",
       [hashedNew, email],
     );
- 
+
     await logAudit(
       { username: storedData.username },
       "PASSWORD_RESET",
@@ -193,7 +192,7 @@ router.post("/forgot-password/reset", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.get("/admin/users", verifySuperAdmin, async (req, res) => {
   try {
     const result = await pool.query(
@@ -204,7 +203,7 @@ router.get("/admin/users", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/admin/update-user", verifySuperAdmin, async (req, res) => {
   try {
     const { userId, role, status } = req.body;
@@ -222,7 +221,7 @@ router.post("/admin/update-user", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.get("/read-erp-data", verifyToken, async (req, res) => {
   try {
     const headerResult = await pool.query(
@@ -237,7 +236,7 @@ router.get("/read-erp-data", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // ==========================================
 // RULES
 // ==========================================
@@ -251,7 +250,7 @@ router.get("/api/rules", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/update-rule", verifySuperAdmin, async (req, res) => {
   try {
     const {
@@ -271,7 +270,7 @@ router.post("/api/update-rule", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/add-rule", verifySuperAdmin, async (req, res) => {
   try {
     const { site_keyword, deduct_under_11, deduct_over_12, default_deduct } =
@@ -290,12 +289,11 @@ router.post("/api/add-rule", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
- 
+
 // ==========================================
 // SPECIAL DAYS & EXCEPTION RULES API
 // ==========================================
- 
+
 // Fetch all special rules
 router.get("/api/special-rules", verifyToken, async (req, res) => {
   try {
@@ -307,7 +305,7 @@ router.get("/api/special-rules", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // Add a new special rule
 router.post("/api/add-special-rule", verifySuperAdmin, async (req, res) => {
   try {
@@ -332,7 +330,7 @@ router.post("/api/add-special-rule", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // Update an existing special rule
 router.post("/api/update-special-rule", verifySuperAdmin, async (req, res) => {
   try {
@@ -358,7 +356,7 @@ router.post("/api/update-special-rule", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // Delete a special rule
 router.post("/api/delete-special-rule", verifySuperAdmin, async (req, res) => {
   try {
@@ -374,7 +372,7 @@ router.post("/api/delete-special-rule", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // ==========================================
 // VEHICLE DRIVER & SITE LOGS
 // ==========================================
@@ -388,13 +386,13 @@ router.get("/api/vehicle-info", async (req, res) => {
       params = [`%${plate}%`];
     }
     const result = await pool.query(query, params);
- 
+
     // 🟢 എല്ലാ പ്ലേറ്റ് മാറ്റങ്ങളുടെയും ലോഗുകൾ എടുത്ത് അയക്കുന്നു
     const plateLogsRes = await pool.query(
       "SELECT old_plate_no, new_plate_no, TO_CHAR(change_date, 'YYYY-MM-DD') as change_date FROM vehicle_plate_log ORDER BY change_date ASC"
     );
     const plateLogs = plateLogsRes.rows;
- 
+
     let vehicles = result.rows.map((v) => {
       let vPlate = (v.plate_no || "").trim().toUpperCase();
       let matchedLogs = plateLogs.filter(
@@ -407,13 +405,13 @@ router.get("/api/vehicle-info", async (req, res) => {
         plate_logs: matchedLogs,
       };
     });
- 
+
     res.json({ success: true, data: plate ? vehicles[0] : vehicles });
   } catch (error) {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // ==========================================
 // VEHICLE LOGS (Driver, Site, Owner, Rate)
 // ==========================================
@@ -427,7 +425,7 @@ router.get("/api/vehicle-logs", verifyToken, async (req, res) => {
       pool.query(`SELECT * FROM vehicle_rate_log WHERE plate_no=$1 ORDER BY CASE WHEN status = 'Running' THEN 1 ELSE 2 END ASC, COALESCE(work_start_date, work_end_date, '1970-01-01') DESC, id DESC`, [plate]),
       pool.query(`SELECT * FROM vehicle_plate_log WHERE UPPER(new_plate_no)=UPPER($1) OR UPPER(old_plate_no)=UPPER($1) ORDER BY change_date DESC, id DESC`, [plate])
     ]);
- 
+
     res.json({
       success: true,
       drivers: driverLogs.rows,
@@ -440,7 +438,7 @@ router.get("/api/vehicle-logs", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // Update Owner Log
 router.post("/api/update-owner-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
@@ -448,7 +446,7 @@ router.post("/api/update-owner-log", verifyEditor, async (req, res) => {
     await client.query("BEGIN");
     const { id, plate_no, owner_name, owner_mobile, vat, vat_no, company_display_name, work_start_date, work_end_date, status, reason } = req.body;
     const calculatedStatus = work_end_date ? "Released" : (status || "Running");
- 
+
     let finalStartDate = work_start_date || null;
     if (!finalStartDate && !id) {
       const minSiteRes = await client.query(
@@ -457,7 +455,7 @@ router.post("/api/update-owner-log", verifyEditor, async (req, res) => {
       );
       finalStartDate = minSiteRes.rows[0]?.first_start || null;
     }
- 
+
     if (id) {
       await client.query(
         `UPDATE vehicle_owner_log SET owner_name=$1, owner_mobile=$2, vat=$3, vat_no=$4, company_display_name=$5, work_start_date=$6, work_end_date=$7, status=$8, reason=$9 WHERE id=$10`,
@@ -469,14 +467,14 @@ router.post("/api/update-owner-log", verifyEditor, async (req, res) => {
         [plate_no, owner_name, owner_mobile, vat, vat_no || null, company_display_name, finalStartDate, work_end_date || null, calculatedStatus, reason || null]
       );
     }
- 
+
     if (calculatedStatus === "Running") {
       await client.query(
         `UPDATE timesheet_vehicles SET owner_name=$1, owner_mobile=$2, vat=$3, vat_no=$4, company_display_name_=$5 WHERE UPPER(plate_no)=UPPER($6)`,
         [owner_name, owner_mobile, vat, vat_no || null, company_display_name, plate_no]
       );
     }
- 
+
     await logAudit(req.user, "OWNER_LOG_UPDATE", `Updated owner log for ${plate_no}`);
     await client.query("COMMIT");
     res.json({ success: true });
@@ -487,7 +485,7 @@ router.post("/api/update-owner-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 // Update Rate Log
 router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
@@ -495,7 +493,7 @@ router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
     await client.query("BEGIN");
     const { id, plate_no, site_name, rate, work_start_date, work_end_date, status, reason } = req.body;
     const calculatedStatus = work_end_date ? "Released" : (status || "Running");
- 
+
     if (id) {
       await client.query(
         `UPDATE vehicle_rate_log SET site_name=$1, rate=$2, work_start_date=$3, work_end_date=$4, status=$5, reason=$6 WHERE id=$7`,
@@ -507,12 +505,12 @@ router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
         [plate_no, site_name, rate || null, work_start_date || null, work_end_date || null, calculatedStatus, reason || null]
       );
     }
- 
+
     if (calculatedStatus === "Running") {
       let siteCondition = site_name && site_name.trim() !== "" ? "AND UPPER(site_name)=UPPER($3)" : "";
       let siteParams = [rate || null, plate_no];
       if (siteCondition) siteParams.push(site_name);
- 
+
       await client.query(
         `UPDATE vehicle_site_log SET rate=$1 WHERE UPPER(plate_no)=UPPER($2) ${siteCondition}`,
         siteParams
@@ -522,7 +520,7 @@ router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
         [rate || null, plate_no]
       );
     }
- 
+
     await logAudit(req.user, "RATE_LOG_UPDATE", `Updated rate log for ${plate_no}`);
     await client.query("COMMIT");
     res.json({ success: true });
@@ -533,13 +531,13 @@ router.post("/api/update-rate-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 // Delete Log Entry support for Owner & Rate
 router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
   try {
     const { type, id } = req.body;
     if (!id) throw new Error("Log ID missing");
- 
+
     if (type === "driver") {
       await pool.query("DELETE FROM vehicle_driver_log WHERE id=$1", [id]);
     } else if (type === "site") {
@@ -569,17 +567,17 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
             CASE WHEN status = 'Running' THEN 1 ELSE 2 END ASC,
             COALESCE(work_start_date, work_end_date, '1970-01-01') DESC
         `);
- 
+
     const siteColCheck = await pool.query(
       "SELECT column_name FROM information_schema.columns WHERE table_name='vehicle_site_log' AND column_name='asset_code'",
     );
- 
+
     let selectCols =
       "id, plate_no, site_name, rate, old_vehicle_no, new_vehicle_no, field_co, site_co, reason, TO_CHAR(work_start_date, 'YYYY-MM-DD') as start_date, TO_CHAR(work_end_date, 'YYYY-MM-DD') as end_date, status, replaced_by, vehicle_type";
     if (siteColCheck.rows.length > 0) {
       selectCols += ", asset_code, work_order_no";
     }
- 
+
     const siteLogs = await pool.query(`
             SELECT ${selectCols}
             FROM vehicle_site_log 
@@ -587,7 +585,7 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
             CASE WHEN status = 'Running' THEN 1 ELSE 2 END ASC,
             COALESCE(work_start_date, work_end_date, '1970-01-01') DESC
         `);
- 
+
     const ownerLogs = await pool.query(`
             SELECT id, plate_no, owner_name, owner_mobile, vat, vat_no, company_display_name, reason,
             TO_CHAR(work_start_date, 'YYYY-MM-DD') as start_date,
@@ -597,7 +595,7 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
             CASE WHEN status = 'Running' THEN 1 ELSE 2 END ASC,
             COALESCE(work_start_date, work_end_date, '1970-01-01') DESC
         `);
-  
+
     const rateLogs = await pool.query(`
             SELECT id, plate_no, site_name, rate, reason,
             TO_CHAR(work_start_date, 'YYYY-MM-DD') as start_date,
@@ -607,7 +605,7 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
             CASE WHEN status = 'Running' THEN 1 ELSE 2 END ASC,
             COALESCE(work_start_date, work_end_date, '1970-01-01') DESC
         `);
- 
+
     res.json({
       success: true,
       drivers: driverLogs.rows,
@@ -619,7 +617,7 @@ router.get("/api/all-logs", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // 🟢 Fast inline update for Driver & Site Logs from Main Table (Optimized with Transactions)
 router.post("/api/fast-update-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
@@ -627,9 +625,9 @@ router.post("/api/fast-update-log", verifyEditor, async (req, res) => {
     await client.query("BEGIN");
     const { type, id, plate_no, field, value } = req.body;
     if (!id) throw new Error("Log ID missing. Please create a log first.");
- 
+
     let dateVal = value || null;
- 
+
     if (type === "driver") {
       if (field === "end") {
         let status = dateVal ? "Released" : "Running";
@@ -719,7 +717,7 @@ router.post("/api/fast-update-log", verifyEditor, async (req, res) => {
           );
       }
     }
- 
+
     await logAudit(
       req.user,
       "FAST_UPDATE",
@@ -734,7 +732,7 @@ router.post("/api/fast-update-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 // 🟢 Reverse Sync for Driver Updates (Optimized with Transactions)
 router.post("/api/update-driver-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
@@ -750,7 +748,7 @@ router.post("/api/update-driver-log", verifyEditor, async (req, res) => {
       reason,
     } = req.body;
     const status = work_end_date ? "Released" : "Running";
- 
+
     if (id) {
       await client.query(
         "UPDATE vehicle_driver_log SET driver_name=$1, driver_mobile=$2, work_start_date=$3, work_end_date=$4, status=$5, reason=$6 WHERE id=$7",
@@ -778,14 +776,14 @@ router.post("/api/update-driver-log", verifyEditor, async (req, res) => {
         ],
       );
     }
- 
+
     if (status === "Running") {
       await client.query(
         `UPDATE timesheet_vehicles SET driver_name=$1, driver_mobile=$2 WHERE UPPER(plate_no)=UPPER($3)`,
         [driver_name, driver_mobile, plate_no],
       );
     }
- 
+
     await logAudit(
       req.user,
       "DRIVER_LOG_UPDATE",
@@ -800,7 +798,8 @@ router.post("/api/update-driver-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
-  // 🟢 Reverse Sync for Site Updates (Optimized with Transactions & Field/Site CO)
+
+// 🟢 Reverse Sync for Site Updates (Optimized with Transactions & Field/Site CO)
 router.post("/api/update-site-log", verifyEditor, async (req, res) => {
   const client = await pool.connect();
   try {
@@ -823,7 +822,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       reason,
       vehicle_type,
     } = req.body;
- 
+
     let updateCols = [
       "site_name=$1",
       "work_start_date=$2",
@@ -852,7 +851,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       reason || null,
       vehicle_type || null,
     ];
- 
+
     let insertCols = [
       "plate_no",
       "site_name",
@@ -883,7 +882,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       reason || null,
       vehicle_type || null,
     ];
- 
+
     if (asset_code !== undefined) {
       updateCols.push(`asset_code=$${updateVals.length + 1}`);
       updateVals.push(asset_code || null);
@@ -896,7 +895,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
       insertCols.push("work_order_no");
       insertVals.push(work_order_no || null);
     }
- 
+
     if (id) {
       updateVals.push(id);
       await client.query(
@@ -910,11 +909,11 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
         insertVals,
       );
     }
- 
+
     if (status === "Running") {
       let tsUpdates = ["site_name=$1", "rate=$2", "field_co=$3", "site_co=$4", "vehicle_type=$5"];
       let tsVals = [site_name, rate || null, field_co || null, site_co || null, vehicle_type || null];
- 
+
       if (asset_code !== undefined) {
         tsUpdates.push(`asset_code=$${tsVals.length + 1}`);
         tsVals.push(asset_code || null);
@@ -929,7 +928,7 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
         tsVals,
       );
     }
- 
+
     await logAudit(
       req.user,
       "SITE_LOG_UPDATE",
@@ -944,12 +943,12 @@ router.post("/api/update-site-log", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
   try {
     const { type, id } = req.body;
     if (!id) throw new Error("Log ID missing");
- 
+
     if (type === "driver") {
       await pool.query("DELETE FROM vehicle_driver_log WHERE id=$1", [id]);
     } else if (type === "site") {
@@ -963,259 +962,211 @@ router.post("/api/delete-log-entry", verifyEditor, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // ==========================================
 // RECORD LOCKING (CONCURRENCY CONTROL & LIVE TRANSFER)
 // ==========================================
-const recordLockTimeout = 10 * 60 * 1000;
-const transferRequestTimeout = 15 * 1000;
-const backgroundLockTimeout = 30 * 1000;
-let recordLockTableReady;
- 
-function recordLockKey({ plate, month, year }) {
-  if (!plate || !month || !year) return null;
-  return `${String(plate).replace(/\s+/g, "").toUpperCase()}_${String(month).trim().toLowerCase()}_${String(year).trim()}`;
-}
- 
-function recordLockOwner(req) {
-  const clientId = req.body?.clientId || req.query?.clientId || "";
-  return createHash("sha256").update(`${req.headers.authorization}:${clientId}`).digest("hex");
-}
- 
-function ensureRecordLockTable() {
-  if (!recordLockTableReady) {
-    recordLockTableReady = pool.query(`
-      CREATE TABLE IF NOT EXISTS timesheet_record_locks (
-        lock_key TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        owner_id TEXT,
-        lease_id TEXT,
-        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        background_at TIMESTAMPTZ,
-        requested_by TEXT,
-        requested_owner_id TEXT,
-        request_time TIMESTAMPTZ,
-        requester_seen_at TIMESTAMPTZ
-      )
-    `).then(async () => {
-      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS owner_id TEXT");
-      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS requested_owner_id TEXT");
-      await pool.query("ALTER TABLE timesheet_record_locks ADD COLUMN IF NOT EXISTS background_at TIMESTAMPTZ");
-    }).catch(error => {
-      recordLockTableReady = null;
-      throw error;
-    });
-  }
-  return recordLockTableReady;
-}
- 
-function activeRecordLock(lock) {
-  return lock && Date.now() - new Date(lock.last_seen_at).getTime() < recordLockTimeout &&
-    (!lock.background_at || Date.now() - new Date(lock.background_at).getTime() < backgroundLockTimeout) ? lock : null;
-}
- 
-function pendingRequester(lock) {
-  return lock.requested_by && lock.requested_by !== "REJECTED" &&
-    Date.now() - new Date(lock.requester_seen_at).getTime() < transferRequestTimeout;
-}
- 
-async function withRecordLock(lockKey, callback) {
-  await ensureRecordLockTable();
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const result = await client.query("SELECT * FROM timesheet_record_locks WHERE lock_key = $1 FOR UPDATE", [lockKey]);
-    const value = await callback(client, activeRecordLock(result.rows[0]));
-    await client.query("COMMIT");
-    return value;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
-  }
-}
- 
-function recordLockError(res, error) {
-  console.error("Timesheet record lock error:", error);
-  res.status(503).json({ success: false, message: "Record lock unavailable. Please try again." });
-}
- 
-router.post("/api/record-lock/request", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) {
+const activeRecordLocks = new Map();
+// Structure: { username, timestamp, requestedBy, requestTime }
+
+// 🟢 ROBUST MULTI-USER CONCURRENCY CONTROL
+router.post("/api/record-lock/request", verifyToken, (req, res) => {
+  const { plate, month, year } = req.body;
+  if (!plate || !month || !year) {
     return res.json({ success: false, message: "Missing lock parameters" });
   }
-  try {
-    await ensureRecordLockTable();
-    const username = String(req.user.username).trim();
-    const ownerId = recordLockOwner(req);
-    const leaseId = randomUUID();
-    const claim = await pool.query(`
-      INSERT INTO timesheet_record_locks (lock_key, username, owner_id, lease_id)
-      VALUES ($1, $2, $3, $4)
-      ON CONFLICT (lock_key) DO UPDATE SET
-        username = EXCLUDED.username, owner_id = EXCLUDED.owner_id, lease_id = EXCLUDED.lease_id,
-        last_seen_at = NOW(), background_at = NULL, requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL
-      WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
-         OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds'
-         OR timesheet_record_locks.owner_id = EXCLUDED.owner_id
-         OR (timesheet_record_locks.owner_id IS NULL AND timesheet_record_locks.lease_id = $5)
-      RETURNING username
-    `, [lockKey, username, ownerId, leaseId, req.body.leaseId || null]);
-    if (claim.rows.length) return res.json({ success: true, owner: username, leaseId });
-    const holder = await pool.query("SELECT username FROM timesheet_record_locks WHERE lock_key = $1", [lockKey]);
-    res.json({ success: false, lockedBy: holder.rows[0]?.username, message: "Record is locked. Please retry." });
-  } catch (error) {
-    recordLockError(res, error);
+
+  // Normalize key
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const currentUsername = String(req.user.username).trim();
+  const now = Date.now();
+
+  const existingLock = activeRecordLocks.get(lockKey);
+
+  if (existingLock) {
+    const lockOwner = String(existingLock.username).trim();
+
+    // 🟢 1. സ്വന്തം ലോക്ക് ആണെങ്കിൽ എപ്പോഴും ആക്സസ് നൽകുക (Never block the owner)
+    if (lockOwner.toLowerCase() === currentUsername.toLowerCase()) {
+      existingLock.timestamp = now; // Refresh activity timestamp
+      return res.json({ success: true, owner: lockOwner });
+    }
+
+    // 🟢 2. മറ്റൊരാളുടെ ലോക്ക് 10 മിനിറ്റിൽ കൂടുതൽ ഇൻആക്ടീവ് ആണെങ്കിൽ ഓട്ടോ-റിലീസ്
+    if (now - existingLock.timestamp > 10 * 60 * 1000) {
+      activeRecordLocks.delete(lockKey);
+    } else {
+      // നിലവിൽ മറ്റൊരാൾ ആക്ടീവ് ആണ്
+      return res.json({ success: false, lockedBy: existingLock.username });
+    }
   }
+
+  // പുതിയ ലോക്ക് ഓണർഷിപ്പ് നൽകുന്നു
+  activeRecordLocks.set(lockKey, {
+    username: currentUsername,
+    timestamp: now,
+    requestedBy: null,
+    requestTime: null,
+  });
+  res.json({ success: true, owner: currentUsername });
 });
- 
-router.post("/api/record-lock/release", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: true });
-  try {
-    await ensureRecordLockTable();
-    await pool.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1 AND lease_id = $2 AND (owner_id = $3 OR owner_id IS NULL)", [lockKey, req.body.leaseId || null, recordLockOwner(req)]);
-    res.json({ success: true });
-  } catch (error) {
-    recordLockError(res, error);
+
+// 🟢 INSTANT RELEASE: ടാബ് മാറുമ്പോഴോ ക്ലോസ് ചെയ്യുമ്പോഴോ ഉടനടി റിലീസ് ചെയ്യുന്നു
+router.post("/api/record-lock/release", verifyToken, (req, res) => {
+  const { plate, month, year } = req.body;
+  if (!plate || !month || !year) return res.json({ success: true });
+
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const currentUsername = String(req.user.username).trim().toLowerCase();
+
+  const existingLock = activeRecordLocks.get(lockKey);
+  if (existingLock) {
+    // ആ വ്യക്തി തന്നെയാണ് റിലീസ് ചെയ്യുന്നതെങ്കിൽ ഉടൻ മായ്ക്കുന്നു
+    if (String(existingLock.username).trim().toLowerCase() === currentUsername) {
+      activeRecordLocks.delete(lockKey);
+    }
   }
+  res.json({ success: true });
 });
- 
-router.post("/api/record-lock/background", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (!lock || !req.body.leaseId || lock.lease_id !== req.body.leaseId ||
-          (lock.owner_id !== recordLockOwner(req) && lock.owner_id !== null)) return { success: false };
-      await client.query("UPDATE timesheet_record_locks SET background_at = NOW() WHERE lock_key = $1", [lockKey]);
-      return { success: true };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
+
+// 🟢 RESOLVE TRANSFER: യൂസർ 2-ന് ഓണർഷിപ്പ് പെർമനന്റായി കൈമാറുന്നു
+router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
+  const { plate, month, year, action } = req.body;
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+  const currentUser = String(req.user.username).trim().toLowerCase();
+
+  if (!lock) return res.json({ success: false, message: "No active lock" });
+
+  const requester = lock.requestedBy;
+
+  if (action === "force" && requester && requester.toLowerCase() === currentUser) {
+    lock.username = req.user.username; // User 2 becomes owner
+    lock.timestamp = Date.now();
+    lock.requestedBy = null;
+    lock.requestTime = null;
+    return res.json({ success: true, newOwner: lock.username });
+  } else if (String(lock.username).trim().toLowerCase() === currentUser) {
+    if (action === "approve" && requester) {
+      lock.username = requester; // Hand over to User 2
+      lock.timestamp = Date.now();
+      lock.requestedBy = null;
+      lock.requestTime = null;
+      return res.json({ success: true, newOwner: lock.username });
+    } else if (action === "reject") {
+      lock.requestedBy = "REJECTED";
+      lock.requestTime = null;
+      return res.json({ success: true });
+    }
   }
+
+  res.json({ success: false });
 });
- 
-router.post("/api/record-lock/resolve-transfer", verifyToken, async (req, res) => {
-  const { action } = req.body;
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (!lock) return { success: false, message: "No active lock" };
-      const requester = lock.requested_by;
-      if (action === "force" && requester && requester !== "REJECTED" &&
-          lock.requested_owner_id === recordLockOwner(req) &&
-          pendingRequester(lock) &&
-          lock.request_time && Date.now() - new Date(lock.request_time).getTime() >= 30000) {
-        await client.query("UPDATE timesheet_record_locks SET username = $2, owner_id = $3, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester, lock.requested_owner_id]);
-        return { success: true, newOwner: requester };
-      }
-      if ((lock.owner_id === recordLockOwner(req) || lock.owner_id === null) && req.body.leaseId && req.body.leaseId === lock.lease_id) {
-        if (action === "approve" && pendingRequester(lock) && lock.requested_owner_id !== recordLockOwner(req)) {
-          await client.query("UPDATE timesheet_record_locks SET username = $2, owner_id = $3, lease_id = NULL, last_seen_at = NOW(), requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey, requester, lock.requested_owner_id]);
-          return { success: true, newOwner: requester };
-        }
-        if (action === "reject" && pendingRequester(lock)) {
-          await client.query("UPDATE timesheet_record_locks SET requested_by = 'REJECTED', request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
-          return { success: true };
-        }
-      }
-      return { success: false };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
-  }
-});
- 
-router.get("/api/record-lock/poll", verifyToken, async (req, res) => {
+
+// 🟢 POLL CHECK: തത്സമയം നിലവിലെ സ്റ്റാറ്റസ് ഉറപ്പുവരുത്തുന്നു
+router.get("/api/record-lock/poll", verifyToken, (req, res) => {
   const { plate, month, year } = req.query;
-  const lockKey = recordLockKey({ plate, month, year });
-  if (!lockKey) return res.json({ locked: false });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (!lock) return { locked: false };
-      const ownerId = recordLockOwner(req);
-      const isOwner = lock.owner_id === ownerId &&
-        (!lock.lease_id || lock.lease_id === req.query.leaseId) ||
-        lock.owner_id === null && !!req.query.leaseId && lock.lease_id === req.query.leaseId;
-      if (isOwner && lock.lease_id) {
-        await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW(), owner_id = $2 WHERE lock_key = $1", [lockKey, ownerId]);
-      }
-      const requestedBy = pendingRequester(lock) ? lock.requested_by : lock.requested_by === "REJECTED" && lock.requested_owner_id === ownerId ? "REJECTED" : null;
-      if (requestedBy && requestedBy !== "REJECTED" && lock.requested_owner_id === ownerId) {
-        await client.query("UPDATE timesheet_record_locks SET requester_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
-      }
-      return {
-        locked: true, owner: lock.username, isOwner, requestedBy,
-        requestedByMe: !!requestedBy && requestedBy !== "REJECTED" && lock.requested_owner_id === ownerId,
-        requestTime: lock.request_time ? new Date(lock.request_time).getTime() : null,
-      };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
+  const cleanP = String(plate || "").replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+
+  if (!lock || (Date.now() - lock.timestamp >= 10 * 60 * 1000)) {
+    return res.json({ locked: false });
+  }
+
+  res.json({
+    locked: true,
+    owner: lock.username,
+    requestedBy: lock.requestedBy,
+    requestTime: lock.requestTime,
+  });
+});
+
+// 🟢 NEW: API for User B to request edit access
+router.post("/api/record-lock/request-transfer", verifyToken, (req, res) => {
+  const { plate, month, year } = req.body;
+  if (!plate || !month || !year) return res.json({ success: false, message: "Missing parameters" });
+  
+  const cleanP = String(plate).replace(/\s+/g, "").toUpperCase();
+  const lockKey = `${cleanP}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+  
+  if (lock) {
+      lock.requestedBy = req.user.username;
+      lock.requestTime = Date.now();
+      res.json({ success: true });
+  } else {
+      res.json({ success: false, message: "Record is not currently locked." });
   }
 });
- 
-router.post("/api/record-lock/request-transfer", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (!lock) return { success: false, message: "Record is not currently locked." };
-      const ownerId = recordLockOwner(req);
-      if (lock.owner_id === ownerId) return { success: false, message: "You already have edit access." };
-      if (pendingRequester(lock) && lock.requested_owner_id !== ownerId) {
-        return { success: false, message: "Another request is pending." };
-      }
-      await client.query("UPDATE timesheet_record_locks SET requested_by = $2, requested_owner_id = $3, request_time = NOW(), requester_seen_at = NOW() WHERE lock_key = $1", [lockKey, req.user.username, ownerId]);
-      return { success: true };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
+
+// 🟢 NEW: Polling API to check status live without reloading
+router.get("/api/record-lock/poll", verifyToken, (req, res) => {
+  const { plate, month, year } = req.query;
+  const lockKey = `${plate}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+
+  if (!lock || (Date.now() - lock.timestamp >= 15 * 60 * 1000)) {
+      return res.json({ locked: false }); // Lock expired or doesn't exist
   }
+
+  res.json({
+      locked: true,
+      owner: lock.username,
+      requestedBy: lock.requestedBy,
+      requestTime: lock.requestTime
+  });
 });
- 
-router.post("/api/record-lock/clear-rejection", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (lock && lock.requested_by === "REJECTED" && lock.requested_owner_id === recordLockOwner(req)) {
-        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
+
+// 🟢 NEW: Resolve Transfer (Approve/Reject/Force)
+router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
+  const { plate, month, year, action } = req.body; // action: 'approve', 'reject', 'force'
+  const lockKey = `${plate}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+  const currentUser = String(req.user.username).trim().toLowerCase();
+
+  if (!lock) return res.json({ success: false });
+
+  if (action === "force" && String(lock.requestedBy).trim().toLowerCase() === currentUser) {
+      if (lock.requestTime && (Date.now() - lock.requestTime >= 27000)) { 
+          lock.username = req.user.username;
+          lock.timestamp = Date.now();
+          lock.requestedBy = null;
+          lock.requestTime = null;
+          return res.json({ success: true });
       }
-      return { success: true };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
-  }
-});
- 
-router.post("/api/record-lock/cancel-transfer", verifyToken, async (req, res) => {
-  const lockKey = recordLockKey(req.body);
-  if (!lockKey) return res.json({ success: false, message: "Missing lock parameters" });
-  try {
-    const result = await withRecordLock(lockKey, async (client, lock) => {
-      if (lock && lock.requested_owner_id === recordLockOwner(req)) {
-        await client.query("UPDATE timesheet_record_locks SET requested_by = NULL, requested_owner_id = NULL, request_time = NULL, requester_seen_at = NULL WHERE lock_key = $1", [lockKey]);
-      } else if (lock && lock.owner_id === recordLockOwner(req) && !lock.lease_id) {
-        await client.query("DELETE FROM timesheet_record_locks WHERE lock_key = $1", [lockKey]);
+  } else if (String(lock.username).trim().toLowerCase() === currentUser) {
+      if (action === "approve" && lock.requestedBy) {
+          lock.username = lock.requestedBy;
+          lock.timestamp = Date.now();
+          lock.requestedBy = null;
+          lock.requestTime = null;
+          return res.json({ success: true, newOwner: lock.username });
+      } else if (action === "reject") {
+          lock.requestedBy = "REJECTED"; // Signal to User B that request was rejected
+          lock.requestTime = null;
       }
-      return { success: true };
-    });
-    res.json(result);
-  } catch (error) {
-    recordLockError(res, error);
+      return res.json({ success: true });
   }
+
+  res.json({ success: false });
 });
- 
+
+// 🟢 NEW: Clear Rejection Status
+router.post("/api/record-lock/clear-rejection", verifyToken, (req, res) => {
+  const { plate, month, year } = req.body;
+  const lockKey = `${plate}_${month}_${year}`;
+  const lock = activeRecordLocks.get(lockKey);
+  
+  if (lock && lock.requestedBy === "REJECTED") {
+      lock.requestedBy = null;
+  }
+  res.json({ success: true });
+});
+
 // ==========================================
 // GRID DATA ENTRY & BULK IMPORT
 // ==========================================
@@ -1227,11 +1178,11 @@ router.get("/api/grid-data", verifyToken, async (req, res) => {
     let params = [month, year];
     let allRelatedPlates = [];
     let plateLogs = [];
- 
+
     if (plate) {
       const cleanPlate = plate.trim().toUpperCase();
       allRelatedPlates.push(cleanPlate);
- 
+
       // Fetch all plate change history where this plate is involved as old or new
       const pLogs = await pool.query(
         `SELECT * FROM vehicle_plate_log 
@@ -1240,14 +1191,14 @@ router.get("/api/grid-data", verifyToken, async (req, res) => {
         [cleanPlate]
       );
       plateLogs = pLogs.rows;
- 
+
       plateLogs.forEach((pl) => {
         const oP = (pl.old_plate_no || "").trim().toUpperCase();
         const nP = (pl.new_plate_no || "").trim().toUpperCase();
         if (oP && !allRelatedPlates.includes(oP)) allRelatedPlates.push(oP);
         if (nP && !allRelatedPlates.includes(nP)) allRelatedPlates.push(nP);
       });
- 
+
       // Also check if master vehicle table references this
       const masterCheck = await pool.query(
         `SELECT plate_no FROM timesheet_vehicles WHERE UPPER(TRIM(plate_no)) = $1`,
@@ -1256,16 +1207,16 @@ router.get("/api/grid-data", verifyToken, async (req, res) => {
       if (masterCheck.rows.length > 0 && !allRelatedPlates.includes(cleanPlate)) {
         allRelatedPlates.push(cleanPlate);
       }
- 
+
       query += " AND UPPER(TRIM(plate_no)) = ANY($3::text[])";
       params.push(allRelatedPlates);
     }
- 
+
     const result = await pool.query(query, params);
     let sortedData = result.rows.sort((a, b) => {
       return parseInt(a.record_date || 0) - parseInt(b.record_date || 0);
     });
- 
+
     res.json({ 
       success: true, 
       data: sortedData, 
@@ -1276,9 +1227,8 @@ router.get("/api/grid-data", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
-  let client;
   try {
     const {
       month,
@@ -1302,21 +1252,9 @@ router.post("/api/upsert-grid-cell", verifyEditor, async (req, res) => {
     ];
     if (!allowedCols.includes(col_name))
       return res.json({ success: false, message: "Invalid column parameter" });
-    
-    const username = req.user.username;
-    const lockKey = recordLockKey({ plate: plate_no, month, year });
-    if (!lockKey || !req.body.leaseId) return res.json({ success: false, lockLost: true, message: "Edit access required. Fetch this record again." });
-    await ensureRecordLockTable();
-    client = await pool.connect();
-    await client.query("BEGIN");
-    const lockResult = await client.query("SELECT * FROM timesheet_record_locks WHERE lock_key = $1 FOR UPDATE", [lockKey]);
-    const lock = activeRecordLock(lockResult.rows[0]);
-    if (!lock || (lock.owner_id !== recordLockOwner(req) && lock.owner_id !== null) || lock.lease_id !== req.body.leaseId) {
-      await client.query("ROLLBACK");
-      return res.json({ success: false, lockLost: true, lockedBy: lock?.username, message: lock ? `Record is locked by ${lock.username}` : "Edit access expired. Fetch this record again." });
-    }
-    await client.query("UPDATE timesheet_record_locks SET last_seen_at = NOW() WHERE lock_key = $1", [lockKey]);
- 
+
+    const username = req.user.username; // Extracting user from token via verifyEditor
+
 const query = `
             INSERT INTO timesheet_daily_records (month, year, plate_no, record_date, "${col_name}", calc_distance, calc_time, modified_by) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
@@ -1328,7 +1266,7 @@ const query = `
                 modified_by = EXCLUDED.modified_by,
                 updated_at = CURRENT_TIMESTAMP
         `;
-    await client.query(query, [
+    await pool.query(query, [
       month,
       year,
       plate_no,
@@ -1338,19 +1276,15 @@ const query = `
       calc_time,
       username
     ]);
-    await client.query("COMMIT");
     res.json({ success: true });
   } catch (error) {
-    if (client) await client.query("ROLLBACK").catch(() => {});
     res.json({ success: false, message: error.message });
-  } finally {
-    if (client) client.release();
   }
 });
- 
+
 // 🟢 Bulk Import Optimization (Batched Transactions for Performance)
 router.post("/api/bulk-import", verifyEditor, async (req, res) => {
-  let client;
+  const client = await pool.connect();
   try {
     const { records } = req.body;
     if (!records || !Array.isArray(records)) {
@@ -1359,32 +1293,11 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
         message: "Invalid data format received.",
       });
     }
- 
-    await ensureRecordLockTable();
-    client = await pool.connect();
+
     await client.query("BEGIN");
     
     const username = req.user.username; // Extracting user from token via verifyEditor
-    const ownerId = recordLockOwner(req);
-    const importLeaseId = randomUUID();
-    const lockKeys = [...new Set(records.map(row => recordLockKey({ plate: row.plate_no, month: row.month, year: row.year })))].sort();
-    if (lockKeys.includes(null)) throw new Error("Missing record lock parameters");
-    for (const lockKey of lockKeys) {
-      const claim = await client.query(`
-        INSERT INTO timesheet_record_locks (lock_key, username, owner_id, lease_id) VALUES ($1, $2, $3, $4)
-        ON CONFLICT (lock_key) DO UPDATE SET
-          username = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.username ELSE timesheet_record_locks.username END,
-          owner_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.owner_id ELSE timesheet_record_locks.owner_id END,
-          lease_id = CASE WHEN timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes' OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds' THEN EXCLUDED.lease_id ELSE timesheet_record_locks.lease_id END,
-          last_seen_at = NOW(), background_at = NULL
-        WHERE timesheet_record_locks.last_seen_at < NOW() - INTERVAL '10 minutes'
-           OR timesheet_record_locks.background_at < NOW() - INTERVAL '30 seconds'
-           OR ((timesheet_record_locks.owner_id = EXCLUDED.owner_id OR timesheet_record_locks.owner_id IS NULL) AND timesheet_record_locks.lease_id = $5)
-        RETURNING lease_id
-      `, [lockKey, username, ownerId, importLeaseId, req.body.leaseId || null]);
-      if (!claim.rows.length) throw new Error("A record is locked by another editor. Try again after edit access is available.");
-    }
- 
+
     // Batch Processing Logic to speed up large imports (reduces overhead)
     for (let i = 0; i < records.length; i += 1000) {
       const batch = records.slice(i, i + 1000);
@@ -1429,8 +1342,7 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
         );
       }
     }
- 
-    await client.query("DELETE FROM timesheet_record_locks WHERE lock_key = ANY($1::text[]) AND lease_id = $2", [lockKeys, importLeaseId]);
+
     await logAudit(
       req.user,
       "BULK_IMPORT_GRID",
@@ -1442,13 +1354,13 @@ router.post("/api/bulk-import", verifyEditor, async (req, res) => {
       message: `Successfully imported ${records.length} records.`,
     });
   } catch (error) {
-    if (client) await client.query("ROLLBACK").catch(() => {});
+    await client.query("ROLLBACK");
     res.json({ success: false, message: error.message });
   } finally {
-    if (client) client.release();
+    client.release();
   }
 });
- 
+
 // ==========================================
 // MASTER DATABASE MANAGEMENT
 // ==========================================
@@ -1462,7 +1374,7 @@ router.get("/api/db/columns", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.get("/api/db/data", verifyToken, async (req, res) => {
   try {
     // Auto-heal logic moved to Initialization block to improve DB read speed.
@@ -1474,7 +1386,7 @@ router.get("/api/db/data", verifyToken, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
   try {
     const { plate_no, col_name, value } = req.body;
@@ -1485,7 +1397,7 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
       `UPDATE timesheet_vehicles SET "${cleanCol}" = $1 WHERE plate_no = $2`,
       [value, plate_no],
     );
- 
+
     // 2. Auto-Sync to Active Driver Log (if applicable)
     if (["driver_name", "driver_mobile"].includes(cleanCol)) {
       await pool.query(
@@ -1493,7 +1405,7 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
         [value, plate_no]
       );
     }
- 
+
     // 3. Auto-Sync to Active Site Log (if applicable)
     if (["site_name", "rate", "field_co", "site_co", "asset_code", "work_order_no", "old_vehicle_no", "new_vehicle_no"].includes(cleanCol)) {
       await pool.query(
@@ -1501,7 +1413,7 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
         [value, plate_no]
       );
     }
- 
+
     // 4. Auto-Sync to Active Owner Log & Billing Records
     if (["owner_name", "owner_mobile", "vat", "vat_no", "company_display_name", "company_display_name_"].includes(cleanCol)) {
       let targetCol = cleanCol === "company_display_name_" ? "company_display_name" : cleanCol;
@@ -1511,7 +1423,7 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
         `SELECT id FROM vehicle_owner_log WHERE UPPER(TRIM(plate_no)) = UPPER(TRIM($1)) AND status = 'Running' ORDER BY id DESC LIMIT 1`,
         [plate_no]
       );
- 
+
       if (checkActive.rows.length > 0) {
         await pool.query(
           `UPDATE vehicle_owner_log SET "${targetCol}" = $1 WHERE id = $2`,
@@ -1523,25 +1435,25 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
           [plate_no.trim().toUpperCase(), value]
         );
       }
- 
+
       // 🟢 Modify billing_records and vat_billing_records directly if owner_name is corrected
       if (cleanCol === "owner_name" && value && value.trim()) {
         const cleanPlate = plate_no.trim().toUpperCase();
         const newOwner = value.trim();
- 
+
         // 1. Update billing_records for this vehicle
         await pool.query(
           `UPDATE billing_records SET owner = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
           [newOwner, cleanPlate]
         );
- 
+
         // 2. Find which site this vehicle is currently allocated to
         const vehicleSiteRes = await pool.query(
           `SELECT site_name FROM timesheet_vehicles WHERE UPPER(TRIM(plate_no)) = $1`,
           [cleanPlate]
         );
         const currentSite = vehicleSiteRes.rows[0]?.site_name;
- 
+
         // 3. Sync vat_billing_records: move the billing for this site to the new supplier
         if (currentSite && currentSite.trim()) {
           await pool.query(
@@ -1553,13 +1465,13 @@ router.post("/api/db/update-cell", verifyEditor, async (req, res) => {
         }
       }
     }
- 
+
     res.json({ success: true });
   } catch (error) {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/db/delete-row", verifyEditor, async (req, res) => {
   try {
     const { plate_no } = req.body;
@@ -1572,7 +1484,7 @@ router.post("/api/db/delete-row", verifyEditor, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/db/add-row", verifyEditor, async (req, res) => {
   try {
     let { plate_no } = req.body;
@@ -1587,7 +1499,7 @@ router.post("/api/db/add-row", verifyEditor, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/db/add-column", verifySuperAdmin, async (req, res) => {
   try {
     const { col_name } = req.body;
@@ -1605,7 +1517,7 @@ router.post("/api/db/add-column", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
-  
+
 router.post("/api/db/rename-column", verifySuperAdmin, async (req, res) => {
   try {
     const { old_name, new_name } = req.body;
@@ -1624,7 +1536,7 @@ router.post("/api/db/rename-column", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/db/delete-column", verifySuperAdmin, async (req, res) => {
   try {
     const { col_name } = req.body;
@@ -1638,26 +1550,26 @@ router.post("/api/db/delete-column", verifySuperAdmin, async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // 🟢 BULK IMPORT FIX: Optimized with Batch Processing & Safety Checks
 router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
   const client = await pool.connect();
   try {
     const { records, driverLogs, siteLogs } = req.body;
- 
+
     if (!records || !Array.isArray(records) || records.length === 0) {
       return res.json({
         success: false,
         message: "Invalid or empty data format received.",
       });
     }
- 
+
     await client.query("BEGIN");
     const colRes = await client.query(
       `SELECT column_name FROM information_schema.columns WHERE table_name = 'timesheet_vehicles'`,
     );
     const validCols = colRes.rows.map((r) => r.column_name);
- 
+
     let excelPlates = [];
     for (let row of records) {
       let pNo =
@@ -1668,13 +1580,13 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         row["PLATE NO"];
       if (pNo) excelPlates.push(String(pNo).trim().toUpperCase());
     }
- 
+
     if (excelPlates.length === 0) {
       throw new Error(
         "Could not find Plate No column. Import aborted to prevent data loss.",
       );
     }
- 
+
     // Clean slate for imported plates
     await client.query(
       `DELETE FROM vehicle_driver_log WHERE NOT (UPPER(plate_no) = ANY($1))`,
@@ -1688,7 +1600,7 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
       `DELETE FROM timesheet_vehicles WHERE NOT (UPPER(plate_no) = ANY($1))`,
       [excelPlates],
     );
- 
+
     // Batch inserting master DB records
     for (let row of records) {
       let pNo =
@@ -1698,26 +1610,26 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         row["Plate No"] ||
         row["PLATE NO"];
       if (!pNo) continue;
- 
+
       if (row.wrk_start && row.wrk_end && isNaN(parseFloat(row.bd))) {
         row.bd = null;
       }
- 
+
       pNo = String(pNo).trim().toUpperCase();
       let keys = ["plate_no"];
       let vals = [pNo];
       let updates = [];
- 
+
       for (let key of Object.keys(row)) {
         let cleanKey = key.toLowerCase().replace(/[^a-z0-9_]/g, "_");
- 
+
         if (key.toUpperCase() === "VAT (YES/NO)" || key.toUpperCase() === "VAT")
           cleanKey = "vat";
         if (key.toUpperCase() === "VEHICLE TYPE") cleanKey = "vehicle_type";
         if (key.toUpperCase() === "RATE") cleanKey = "rate";
         if (key.toUpperCase() === "FIELD CO") cleanKey = "field_co";
         if (key.toUpperCase() === "SITE CO") cleanKey = "site_co";
- 
+
         if (cleanKey !== "plate_no" && validCols.includes(cleanKey)) {
           keys.push(`"${cleanKey}"`);
           vals.push(row[key]);
@@ -1734,7 +1646,7 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         vals,
       );
     }
- 
+
     if (driverLogs !== undefined) {
       if (excelPlates.length > 0) {
         await client.query(
@@ -1750,17 +1662,17 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         let st = row["Start Date"] || row["start_date"];
         let ed = row["End Date"] || row["end_date"];
         let status = row["Status"] || row["status"] || "Running";
- 
+
         st = st && st !== "-" && String(st).trim() !== "" ? st : null;
         ed = ed && ed !== "-" && String(ed).trim() !== "" ? ed : null;
- 
+
         await client.query(
           `INSERT INTO vehicle_driver_log (plate_no, driver_name, driver_mobile, work_start_date, work_end_date, status) VALUES ($1, $2, $3, $4, $5, $6)`,
           [String(pNo).trim().toUpperCase(), dName, dMob, st, ed, status],
         );
       }
     }
- 
+
     if (siteLogs !== undefined) {
       if (excelPlates.length > 0) {
         await client.query(
@@ -1783,10 +1695,10 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         let rate = row["Rate"] || row["rate"];
         let fCo = row["Field CO"] || row["field_co"];
         let sCo = row["Site CO"] || row["site_co"];
- 
+
         st = st && st !== "-" && String(st).trim() !== "" ? st : null;
         ed = ed && ed !== "-" && String(ed).trim() !== "" ? ed : null;
- 
+
         await client.query(
           `INSERT INTO vehicle_site_log (plate_no, site_name, work_start_date, work_end_date, status, old_vehicle_no, new_vehicle_no, asset_code, work_order_no, rate, field_co, site_co) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
@@ -1806,7 +1718,7 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         );
       }
     }
- 
+
     await logAudit(
       req.user,
       "BULK_IMPORT_MASTER",
@@ -1821,7 +1733,7 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
         AND tv.rate IS NOT NULL
         AND tv.rate != ''
     `);
- 
+
     await logAudit(
       req.user,
       "BULK_IMPORT_MASTER",
@@ -1836,11 +1748,11 @@ router.post("/api/db/bulk-import", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 // ==========================================
 // PUBLIC REPORT VIEW
 // ==========================================
- 
+
 // ==========================================
 // PUBLIC VEHICLE DATA FOR SUGGESTIONS (WITH PLATE LOGS)
 // ==========================================
@@ -1861,11 +1773,11 @@ router.get("/api/public/vehicles", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 router.post("/api/public/view-report", async (req, res) => {
   try {
     const { month, year, filterType, filterValue } = req.body;
- 
+
     const monthNames = [
       "January",
       "February",
@@ -1882,12 +1794,12 @@ router.post("/api/public/view-report", async (req, res) => {
     ];
     const mIdx = monthNames.indexOf(month);
     if (mIdx === -1) throw new Error("Invalid Month Selection");
- 
+
     const padMonth = String(mIdx + 1).padStart(2, "0");
     const lastDay = new Date(year, mIdx + 1, 0).getDate();
     const targetStartStr = `${year}-${padMonth}-01`;
     const targetEndStr = `${year}-${padMonth}-${lastDay}`;
- 
+
     let vQuery = `
             SELECT tv.* FROM timesheet_vehicles tv
             WHERE EXISTS (
@@ -1896,10 +1808,10 @@ router.post("/api/public/view-report", async (req, res) => {
                 AND (vsl.work_start_date IS NULL OR vsl.work_start_date <= $1)
                 AND (vsl.work_end_date IS NULL OR vsl.work_end_date >= $2)
         `;
- 
+
     let vParams = [targetEndStr, targetStartStr];
     let paramCount = 2;
- 
+
     if (filterValue) {
       if (filterType === "Plate No") {
         paramCount++;
@@ -1943,12 +1855,12 @@ router.post("/api/public/view-report", async (req, res) => {
         vParams.push(plates);
       }
     }
- 
+
     vQuery += ` ) ORDER BY tv.plate_no ASC`;
- 
+
     const vehiclesResult = await pool.query(vQuery, vParams);
     let vehicles = vehiclesResult.rows;
- 
+
     if (vehicles.length === 0) {
       return res.json({
         success: true,
@@ -1957,9 +1869,9 @@ router.post("/api/public/view-report", async (req, res) => {
         logs: { drivers: [], sites: [] },
       });
     }
- 
+
     const plates = vehicles.map((v) => v.plate_no);
- 
+
     const recordsResult = await pool.query(
       "SELECT * FROM timesheet_daily_records WHERE month=$1 AND year=$2 AND plate_no = ANY($3)",
       [month, year, plates],
@@ -1983,7 +1895,7 @@ router.post("/api/public/view-report", async (req, res) => {
     const plateLogs = await pool.query(
       "SELECT old_plate_no, new_plate_no, TO_CHAR(change_date, 'YYYY-MM-DD') as change_date FROM vehicle_plate_log ORDER BY change_date ASC"
     );
- 
+
     res.json({
       success: true,
       vehicles: vehicles,
@@ -2000,75 +1912,75 @@ router.post("/api/public/view-report", async (req, res) => {
     res.json({ success: false, message: error.message });
   }
 });
- 
+
 // Add this route anywhere before module.exports = router;
- 
+
 router.post("/api/db/update-plate-no", verifyEditor, async (req, res) => {
   const client = await pool.connect();
   try {
     const { old_plate_no, new_plate_no, change_date, reason } = req.body;
     if (!old_plate_no || !new_plate_no)
       throw new Error("Missing plate numbers");
- 
+
     const oldPlate = old_plate_no.replace(/\s+/g, ' ').trim().toUpperCase();
     const newPlate = new_plate_no.replace(/\s+/g, ' ').trim().toUpperCase();
     const effectiveDate = change_date ? change_date : new Date().toISOString().split('T')[0];
     const username = req.user ? req.user.username : 'Editor';
- 
+
     if (oldPlate === newPlate)
       return res.json({ success: true, new_plate_no: newPlate });
- 
+
     await client.query("BEGIN");
- 
+
     // 1. Insert into Plate Change Log Table
     await client.query(
       `INSERT INTO vehicle_plate_log (old_plate_no, new_plate_no, change_date, reason, changed_by)
        VALUES ($1, $2, $3, $4, $5)`,
       [oldPlate, newPlate, effectiveDate, reason || null, username]
     );
- 
+
     // 2. Update Master Vehicles Table
     await client.query(
       `UPDATE timesheet_vehicles SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 3. Update Driver Logs
     await client.query(
       `UPDATE vehicle_driver_log SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 4. Update Site Logs
     await client.query(
       `UPDATE vehicle_site_log SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 5. Update Grid/Daily Records
     await client.query(
       `UPDATE timesheet_daily_records SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 6. Update Owner Logs
     await client.query(
       `UPDATE vehicle_owner_log SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 7. Update Rate Logs
     await client.query(
       `UPDATE vehicle_rate_log SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 8. Update Billing Records
     await client.query(
       `UPDATE billing_records SET plate_no = $1 WHERE UPPER(TRIM(plate_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     // 9. Update Replacement fields in site logs if referenced
     await client.query(
       `UPDATE vehicle_site_log SET old_vehicle_no = $1 WHERE UPPER(TRIM(old_vehicle_no)) = $2`,
@@ -2078,14 +1990,14 @@ router.post("/api/db/update-plate-no", verifyEditor, async (req, res) => {
       `UPDATE vehicle_site_log SET new_vehicle_no = $1 WHERE UPPER(TRIM(new_vehicle_no)) = $2`,
       [newPlate, oldPlate],
     );
- 
+
     await logAudit(
       req.user,
       "PLATE_NO_UPDATE",
       `Changed plate no from ${oldPlate} to ${newPlate} (Date: ${effectiveDate}, Reason: ${reason || "N/A"})`,
     );
     await client.query("COMMIT");
- 
+
     res.json({ success: true, new_plate_no: newPlate });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -2101,15 +2013,15 @@ router.post("/api/db/update-plate-no", verifyEditor, async (req, res) => {
     client.release();
   }
 });
- 
+
 // KLM Security Check Route
 router.post("/api/verify-klm", (req, res) => {
   try {
     const { code } = req.body;
- 
+
     // Fetch the security code from the .env file
     const validCode = process.env.KLM_SECURITY_CODE;
- 
+
     if (code === validCode) {
       res.json({ success: true, message: "Access Granted" });
     } else {
@@ -2119,11 +2031,11 @@ router.post("/api/verify-klm", (req, res) => {
     res.status(500).json({ success: false, message: "Server Error" });
   }
 });
- 
+
 // ==========================================
 // AUTO CLEANUP & AUTO LOCK PROCESSES
 // ==========================================
- 
+
 // 1. Auto Cleanup (Runs every 24 hours)
 setInterval(async () => {
   try {
@@ -2139,28 +2051,28 @@ setInterval(async () => {
     console.error("Auto Cleanup Error:", error.message);
   }
 }, 24 * 60 * 60 * 1000);
- 
+
 // 2. Auto Lock Process (2 Months Gap)
 async function runAutoLock() {
   try {
     const now = new Date();
- 
+
     const lockTargetDate = new Date(now.getFullYear(), now.getMonth() - 2, 1);
- 
+
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const targetMonthStr = monthNames[lockTargetDate.getMonth()];
     const targetYear = lockTargetDate.getFullYear();
- 
+
     const res = await pool.query("SELECT lock_month, lock_year FROM timesheet_lock_period WHERE id = 1");
- 
+
     if (res.rows.length > 0) {
         const current = res.rows[0];
         let currentLockDate = new Date(1970, 0, 1); 
- 
+
         if (current.lock_month && current.lock_year) {
             currentLockDate = new Date(current.lock_year, monthNames.indexOf(current.lock_month), 1);
         }
- 
+
         if (lockTargetDate > currentLockDate) {
             await pool.query(
                 "UPDATE timesheet_lock_period SET lock_month = $1, lock_year = $2 WHERE id = 1",
@@ -2173,10 +2085,9 @@ async function runAutoLock() {
     console.error("Auto Lock Error:", error.message);
   }
 }
- 
+
 runAutoLock();
- 
+
 setInterval(runAutoLock, 12 * 60 * 60 * 1000);
- 
+
 module.exports = router;
- 
