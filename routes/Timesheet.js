@@ -3,6 +3,7 @@ const pool = require("../config/db");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const nodemailer = require("nodemailer");
+const { randomUUID } = require("crypto");
 const {
   verifyToken,
   verifySuperAdmin,
@@ -1012,21 +1013,24 @@ router.post("/api/record-lock/request", verifyToken, (req, res) => {
     // 🟢 1. സ്വന്തം ലോക്ക് ആണെങ്കിൽ എപ്പോഴും ആക്സസ് നൽകുക (Never block the owner)
     if (sameLockUser(lockOwner, currentUsername)) {
       existingLock.timestamp = now; // Refresh activity timestamp
-      return res.json({ success: true, owner: lockOwner });
+      existingLock.leaseId = randomUUID();
+      return res.json({ success: true, owner: lockOwner, leaseId: existingLock.leaseId });
     }
  
     return res.json({ success: false, lockedBy: existingLock.username });
   }
  
   // പുതിയ ലോക്ക് ഓണർഷിപ്പ് നൽകുന്നു
+  const leaseId = randomUUID();
   activeRecordLocks.set(lockKey, {
     username: currentUsername,
     timestamp: now,
+     leaseId,
     requestedBy: null,
     requestTime: null,
     requesterSeenAt: null,
   });
-  res.json({ success: true, owner: currentUsername });
+  res.json({ success: true, owner: currentUsername, leaseId });
 });
  
 // 🟢 INSTANT RELEASE: ടാബ് മാറുമ്പോഴോ ക്ലോസ് ചെയ്യുമ്പോഴോ ഉടനടി റിലീസ് ചെയ്യുന്നു
@@ -1037,7 +1041,8 @@ router.post("/api/record-lock/release", verifyToken, (req, res) => {
   const existingLock = getActiveRecordLock(lockKey);
   if (existingLock) {
     // ആ വ്യക്തി തന്നെയാണ് റിലീസ് ചെയ്യുന്നതെങ്കിൽ ഉടൻ മായ്ക്കുന്നു
-    if (sameLockUser(existingLock.username, req.user.username)) {
+     if (req.body.leaseId && sameLockUser(existingLock.username, req.user.username) &&
+        existingLock.leaseId === req.body.leaseId) {
       activeRecordLocks.delete(lockKey);
     }
   }
@@ -1060,6 +1065,7 @@ router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
       lock.requestTime && Date.now() - lock.requestTime >= 30000) {
     lock.username = req.user.username; // User 2 becomes owner
     lock.timestamp = Date.now();
+    lock.leaseId = null;
     lock.requestedBy = null;
     lock.requestTime = null;
     lock.requesterSeenAt = null;
@@ -1068,6 +1074,7 @@ router.post("/api/record-lock/resolve-transfer", verifyToken, (req, res) => {
     if (action === "approve" && requester && requester !== "REJECTED" && !sameLockUser(lock.username, requester)) {
       lock.username = requester; // Hand over to User 2
       lock.timestamp = Date.now();
+      lock.leaseId = null;
       lock.requestedBy = null;
       lock.requestTime = null;
       lock.requesterSeenAt = null;

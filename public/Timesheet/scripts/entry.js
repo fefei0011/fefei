@@ -469,7 +469,7 @@ async function triggerFetch() {
     } else {
       // 🟢 OWNERSHIP CONFIRMED: യൂസർ 2 ആക്സസ് നേടിയാൽ ആക്സസ് സുരക്ഷിതമായി നിലനിർത്തുന്നു
       isReadOnlyMode = false;
-      currentLockedRecord = { plate: p, month: m, year: y };
+     currentLockedRecord = { plate: p, month: m, year: y, leaseId: lockData.leaseId };
       const btnReq = document.getElementById("btnRequestEdit");
       if (btnReq) btnReq.style.display = "none";
     }
@@ -2228,7 +2228,10 @@ function startRecordPoll(p, m, y) {
                   });
                   const claim = await claimRes.json();
                   if (generation !== recordPollGeneration) return;
-                  if (claim.success) return;
+                 if (claim.success) {
+                      currentLockedRecord = { plate: p, month: m, year: y, leaseId: claim.leaseId };
+                      return;
+                  }
                   if (claim.lockedBy) {
                       data.locked = true;
                       data.owner = claim.lockedBy;
@@ -2241,9 +2244,7 @@ function startRecordPoll(p, m, y) {
           }
 
           if (isMe && data.owner) {
-              currentLockedRecord = { plate: p, month: m, year: y };
-
-              if (isReadOnlyMode) {
+             if (isReadOnlyMode) {
                   isReadOnlyMode = false;
                   amIWaitingForApproval = false;
                   resetBellButton();
@@ -2399,7 +2400,7 @@ async function requestEditAccess() {
               
               if (claimData.success) {
                   isReadOnlyMode = false;
-                  currentLockedRecord = { plate: p, month: m, year: y };
+                 currentLockedRecord = { plate: p, month: m, year: y, leaseId: claimData.leaseId };
                   
                   // എല്ലാ ഇൻപുട്ടുകളും എഡിറ്റബിൾ ആക്കുന്നു
                   document.querySelectorAll(".grid-input").forEach(el => {
